@@ -6,8 +6,11 @@ import com.bulletjournal.repository.UserDaoJpa;
 import com.bulletjournal.repository.models.Project;
 import com.bulletjournal.repository.models.User;
 import com.bulletjournal.templates.repository.model.SelectionMetadataKeyword;
+import com.bulletjournal.templates.repository.model.Category;
+import com.bulletjournal.templates.controller.model.RemoveUserCategoryParams;
 import com.bulletjournal.templates.repository.model.UserCategory;
 import com.bulletjournal.templates.repository.model.UserCategoryKey;
+import com.google.common.collect.ImmutableList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +40,9 @@ public class UserCategoryDaoJpa {
 
     @Autowired
     private UserDaoJpa userDaoJpa;
+
+    @Autowired
+    private CategoryRepository categoryRepository;
 
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
     public void save(UserCategory userCategory) {
@@ -98,5 +104,31 @@ public class UserCategoryDaoJpa {
             userCategory.setSelections(selectionSet);
         }
         save(userCategory);
+    }
+
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
+    public UserCategoryKey removeUserCategories(
+            String requester,
+            RemoveUserCategoryParams removeUserCategoryParams) {
+        Long categoryId = removeUserCategoryParams.getCategoryId();
+        Long selectionId = removeUserCategoryParams.getSelectionId();
+        Category category = this.categoryRepository.getById(categoryId);
+        if (category == null) {
+            throw new ResourceNotFoundException("Category with id " + categoryId + " doesn't exist");
+        }
+
+        List<SelectionMetadataKeyword> keywords = this.selectionMetadataKeywordDaoJpa
+                .getKeywordsBySelections(ImmutableList.of(selectionId));
+        if (keywords.size() == 0) {
+            throw new ResourceNotFoundException("SelectionID not found");
+        }
+        String metadataKeyword = keywords.get(0).getKeyword();
+        User user = this.userDaoJpa.getByName(requester);
+        UserCategoryKey userCategoryKey = new UserCategoryKey(user.getId(), categoryId, metadataKeyword);
+        UserCategory userCategory = this.userCategoryRepository.findById(userCategoryKey)
+                .orElseThrow(() -> new ResourceNotFoundException("UserCategory not found"));
+
+        this.userCategoryRepository.delete(userCategory);
+        return userCategoryKey;
     }
 }
