@@ -18,36 +18,37 @@ type Earnings struct {
 }
 
 type EarningData struct {
-	ID                      string `json:"id"`
-	Date                    string `json:"date"`
-	DateConfirmed            int16  `json:"date_confirmed"`
-	Time                    string `json:"time"`
-	Ticker                  string `json:"ticker"`
-	Exchange                string `json:"exchange"`
-	Name                    string `json:"name"`
-	Period                  string `json:"period"`
-	PeriodYear              int16  `json:"period_year"`
-	Currency                string `json:"currency"`
-	EPS                     string `json:"eps"`
-	EPSEst                  string `json:"eps_est"`
-	EPSPrior                string `json:"eps_prior"`
-	EPSSuprise              string `json:"eps_surprise"`
-	EPSSuprisePercent       string `json:"eps_surprise_percent"`
-	EPSTYPE                 string `json:"eps_type"`
-	Revenue                 string `json:"revenue"`
-	RevenueEst              string `json:"revenue_est"`
-	RevenuePrior            string `json:"revenue_prior"`
-	RevenueSurprise         string `json:"revenue_surprise"`
-	RevenueSurprisePercent  string `json:"revenue_surprise_percent"`
-	RevenueType             string `json:"revenue_type"`
-	Importance              int16  `json:"importance"`
-	Notes                   string `json:"notes"`
-	Updated                 int64  `json:"updated"`
+	ID                     string `json:"id"`
+	Date                   string `json:"date"`
+	DateConfirmed          int16  `json:"date_confirmed"`
+	Time                   string `json:"time"`
+	Ticker                 string `json:"ticker"`
+	Exchange               string `json:"exchange"`
+	Name                   string `json:"name"`
+	Period                 string `json:"period"`
+	PeriodYear             int16  `json:"period_year"`
+	Currency               string `json:"currency"`
+	EPS                    string `json:"eps"`
+	EPSEst                 string `json:"eps_est"`
+	EPSPrior               string `json:"eps_prior"`
+	EPSSuprise             string `json:"eps_surprise"`
+	EPSSuprisePercent      string `json:"eps_surprise_percent"`
+	EPSTYPE                string `json:"eps_type"`
+	Revenue                string `json:"revenue"`
+	RevenueEst             string `json:"revenue_est"`
+	RevenuePrior           string `json:"revenue_prior"`
+	RevenueSurprise        string `json:"revenue_surprise"`
+	RevenueSurprisePercent string `json:"revenue_surprise_percent"`
+	RevenueType            string `json:"revenue_type"`
+	Importance             int16  `json:"importance"`
+	Notes                  string `json:"notes"`
+	Updated                int64  `json:"updated"`
 }
 
 const (
-	earningsDefaultPageSize = 500
+	earningsDefaultPageSize   = 500
 	earningsDefaultImportance = 0
+	RFC3339                   = "2006-01-02T15:04:05Z07:00"
 )
 
 func NewEarningsClient() (*TemplateClient, error) {
@@ -62,7 +63,7 @@ func (c *EarningClient) FetchData() error {
 	date := t.Format("2006-01-02")
 	baseURL := "https://www.benzinga.com/services/webapps/calendar/earnings"
 
-	url := fmt.Sprintf("%s?tpagesize=%+v&parameters[date]=%d&parameters[importance]+%d", baseURL, earningsDefaultPageSize, date, earningsDefaultImportance)
+	url := fmt.Sprintf("%s?pagesize=%+v&parameters[date]=%s&parameters[importance]=%d", baseURL, earningsDefaultPageSize, date, earningsDefaultImportance)
 	resp, err := c.restClient.R().Get(url)
 	if err != nil {
 		return errors.Wrap(err, "sending request failed")
@@ -74,24 +75,27 @@ func (c *EarningClient) FetchData() error {
 	c.data = &data
 	return nil
 }
-func (c *EarningClient)SendData() error {
+
+func (c *EarningClient) SendData() error {
 	if c.data == nil {
 		return errors.New("Empty Earnings data, please fetch data first.")
 	}
 	for i := range c.data.EarningData {
 		target := c.data.EarningData[i]
+		availBefore := target.Date + "T" + target.Time + "Z00:00"
+		t, _ := time.Parse(RFC3339, availBefore)
 		item := persistence.SampleTask{
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			MetaData: "INVESTMENT_EARNINGS_RECORD",
-			Content: "",
-			Name: target.Name,
-			Uid: target.ID,
-			AvailableBefore: target.Date,
-			ReminderBeforeTask: 0,
-			DueDate: target.Date,
-			DueTime: target.Time,
-			Pending: true,
+			CreatedAt:       time.Now(),
+			UpdatedAt:       time.Now(),
+			Metadata:        "INVESTMENT_EARNINGS_RECORD",
+			Content:         "",
+			Name:            target.Name,
+			Uid:             target.ID,
+			AvailableBefore: t,
+			DueDate:         target.Date,
+			DueTime:         target.Time,
+			Pending:         true,
+			Refreshable:     true,
 		}
 		c.sampleDao.Upsert(&item)
 	}

@@ -3,9 +3,9 @@ package investment
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/pkg/errors"
 	"strconv"
 	"time"
-	"github.com/pkg/errors"
 
 	"github.com/singerdmx/BulletJournal/daemon/persistence"
 )
@@ -21,26 +21,28 @@ type IPOData struct {
 
 // Serializer for IPO response
 type IPO struct {
-	ID                             string        `json:"id"`
-	Date                           string        `json:"date"`
-	Time                           string        `json:"time"`
-	Ticker                         string        `json:"ticker"`
-	Exchange                       string        `json:"exchange"`
-	Name                           string        `json:"name"`
-	OpenDateVerified               bool          `json:"open_date_verified"`
-	PricingDate                    string        `json:"pricing_date"`
-	Currency                       string        `json:"currency"`
-	PriceMin                       string        `json:"price_min"`
-	PriceMax                       string        `json:"price_max"`
-	DealStatus                     string        `json:"deal_status"`
-	InsiderLockupDate              string        `json:"insider_lockup_date"`
-	OfferingValue                  int           `json:"offering_value"`
-	OfferingShares                 int           `json:"offering_shares"`
-	SharesOutstanding              int           `json:"shares_outstanding"`
-	UnderwriterQuietExpirationDate string        `json:"underwriter_quiet_expiration_date"`
-	Notes                          string        `json:"notes"`
-	Updated                        int           `json:"updated"`
+	ID                             string `json:"id"`
+	Date                           string `json:"date"`
+	Time                           string `json:"time"`
+	Ticker                         string `json:"ticker"`
+	Exchange                       string `json:"exchange"`
+	Name                           string `json:"name"`
+	OpenDateVerified               bool   `json:"open_date_verified"`
+	PricingDate                    string `json:"pricing_date"`
+	Currency                       string `json:"currency"`
+	PriceMin                       string `json:"price_min"`
+	PriceMax                       string `json:"price_max"`
+	DealStatus                     string `json:"deal_status"`
+	InsiderLockupDate              string `json:"insider_lockup_date"`
+	OfferingValue                  int    `json:"offering_value"`
+	OfferingShares                 int    `json:"offering_shares"`
+	SharesOutstanding              int    `json:"shares_outstanding"`
+	UnderwriterQuietExpirationDate string `json:"underwriter_quiet_expiration_date"`
+	Notes                          string `json:"notes"`
+	Updated                        int    `json:"updated"`
 }
+
+const layoutISO = "2006-01-02"
 
 func NewIPOClient() (*TemplateClient, error) {
 	c := IPOClient{
@@ -98,18 +100,20 @@ func (c *IPOClient) SendData() error {
 	}
 	for i := range c.data.IPO {
 		target := c.data.IPO[i]
+		availBefore := target.Date
+		t, _ := time.Parse(layoutISO, availBefore)
 		item := persistence.SampleTask{
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			MetaData: "INVESTMENT_IPO_RECORD",
-			Content: "",
-			Name: target.Name,
-			Uid: target.ID,
-			AvailableBefore: target.Date, // TODO
-			ReminderBeforeTask: 0,
-			DueDate: target.PricingDate,			
-			DueTime: "",
-			Pending: true,
+			CreatedAt:       time.Now(),
+			UpdatedAt:       time.Now(),
+			Metadata:        "INVESTMENT_IPO_RECORD",
+			Content:         "",
+			Name:            target.Name,
+			Uid:             target.ID,
+			AvailableBefore: t,
+			DueDate:         target.PricingDate,
+			DueTime:         "",
+			Pending:         true,
+			Refreshable:     true,
 		}
 		c.sampleDao.Upsert(&item)
 	}

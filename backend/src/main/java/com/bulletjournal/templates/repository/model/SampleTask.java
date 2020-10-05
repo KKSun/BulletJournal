@@ -19,6 +19,10 @@ public class SampleTask extends NamedModel {
     @Column(name = "content")
     private String content;
 
+    @Column(name = "refreshable")
+    private boolean refreshable;
+
+
     @Column(name = "metadata")
     private String metadata;
 
@@ -85,6 +89,10 @@ public class SampleTask extends NamedModel {
         return dueDate;
     }
 
+    public boolean hasDueDate() {
+        return this.dueDate != null;
+    }
+
     public void setDueDate(String dueDate) {
         this.dueDate = dueDate;
     }
@@ -111,6 +119,14 @@ public class SampleTask extends NamedModel {
 
     public void setPending(boolean pending) {
         this.pending = pending;
+    }
+
+    public boolean isRefreshable() {
+        return refreshable;
+    }
+
+    public void setRefreshable(boolean refreshable) {
+        this.refreshable = refreshable;
     }
 
     public com.bulletjournal.templates.controller.model.SampleTask toPresentationModel() {

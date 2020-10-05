@@ -12,7 +12,7 @@ import AdminChoices from "./admin-choices";
 import {Container} from "react-floating-action-button";
 import AddRule from "../../components/modals/templates/add-rule.component";
 
-const {Title, Text} = Typography;
+const {Title} = Typography;
 
 type AdminStepProps = {
     step: Step | undefined;
@@ -94,8 +94,8 @@ const AdminStepPage: React.FC<AdminStepProps> = (
             </div>
             <div>
                 {step.excludedSelections.map(s => <span>
-                            {s.text} ({s.id})
-                    <DeleteFilled style={{cursor: 'pointer'}} onClick={() => removeExcludedSelection(s.id)}/>
+                            {s}
+                    <DeleteFilled style={{cursor: 'pointer'}} onClick={() => removeExcludedSelection(s)}/>
                         </span>)}
             </div>
         </div>
