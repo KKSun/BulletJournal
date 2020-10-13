@@ -52,6 +52,7 @@ func NewIPOClient() (*TemplateClient, error) {
 }
 
 func (c *IPOClient) FetchData() error {
+	fmt.Println("fetching IPO")
 	year, month, _ := time.Now().Date()
 
 	var datefrom string
@@ -102,19 +103,25 @@ func (c *IPOClient) SendData() error {
 		target := c.data.IPO[i]
 		availBefore := target.Date
 		t, _ := time.Parse(layoutISO, availBefore)
+		dueDate := target.PricingDate
+		if len(dueDate) > 10 {
+			dueDate = dueDate[0:11]  // yyyy-MM-dd
+		}
 		item := persistence.SampleTask{
 			CreatedAt:       time.Now(),
 			UpdatedAt:       time.Now(),
 			Metadata:        "INVESTMENT_IPO_RECORD",
 			Content:         "",
-			Name:            target.Name,
-			Uid:             target.ID,
+			Name:            fmt.Sprintf("%v (%v) goes public on %v", target.Name, target.Ticker, dueDate),
+			Uid:             "INVESTMENT_IPO_RECORD_" + target.Ticker,
 			AvailableBefore: t,
-			DueDate:         target.PricingDate,
+			DueDate:         dueDate,
 			DueTime:         "",
 			Pending:         true,
 			Refreshable:     true,
+			TimeZone:        "America/New_York",
 		}
+		fmt.Println(item.AvailableBefore)
 		c.sampleDao.Upsert(&item)
 	}
 

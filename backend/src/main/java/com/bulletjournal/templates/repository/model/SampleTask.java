@@ -22,6 +22,8 @@ public class SampleTask extends NamedModel {
     @Column(name = "refreshable")
     private boolean refreshable;
 
+    @Column(name = "pending")
+    private boolean pending;
 
     @Column(name = "metadata")
     private String metadata;
@@ -41,8 +43,6 @@ public class SampleTask extends NamedModel {
     @Column(name = "time_zone")
     private String timeZone;
 
-    @Column
-    private boolean pending;
 
     @Override
     public Long getId() {
@@ -139,7 +139,23 @@ public class SampleTask extends NamedModel {
                 dueDate,
                 dueTime,
                 availableBefore,
-                timeZone
-            );
+                timeZone,
+                pending,
+                refreshable);
+    }
+
+    public com.bulletjournal.templates.controller.model.SampleTask toSimplePresentationModel() {
+        return new com.bulletjournal.templates.controller.model.SampleTask(
+                id,
+                getName(),
+                null,
+                null,
+                null,
+                dueDate,
+                dueTime,
+                availableBefore,
+                timeZone,
+                pending,
+                refreshable);
     }
 }

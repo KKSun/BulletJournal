@@ -90,12 +90,13 @@ func (c *EarningClient) SendData() error {
 			Metadata:        "INVESTMENT_EARNINGS_RECORD",
 			Content:         "",
 			Name:            target.Name,
-			Uid:             target.ID,
+			Uid:             "INVESTMENT_EARNINGS_RECORD_" + target.Ticker,
 			AvailableBefore: t,
 			DueDate:         target.Date,
 			DueTime:         target.Time,
 			Pending:         true,
 			Refreshable:     true,
+			TimeZone:        "America/New_York",
 		}
 		c.sampleDao.Upsert(&item)
 	}

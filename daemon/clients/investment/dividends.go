@@ -102,12 +102,13 @@ func (c *DividendsClient) SendData() error {
 			Metadata:        "INVESTMENT_DIVIDENDS_RECORD",
 			Content:         "",
 			Name:            target.Name,
-			Uid:             target.ID,
+			Uid:             "INVESTMENT_DIVIDENDS_RECORD_" + target.Ticker,
 			AvailableBefore: t,
 			DueDate:         "",
 			DueTime:         "",
 			Pending:         true,
 			Refreshable:     true,
+			TimeZone:        "America/New_York",
 		}
 		c.sampleDao.Upsert(&item)
 	}

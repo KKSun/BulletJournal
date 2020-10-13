@@ -1,12 +1,12 @@
 import React, {useEffect, useState} from 'react';
 import './sample-task.styles.less';
-import {BackTop, Button, message, Select, Tag, Typography} from "antd";
+import {BackTop, Button, Checkbox, message, Select, Tag, Typography} from "antd";
 import {IState} from "../../store";
 import {connect} from "react-redux";
 import {getSampleTask, removeSampleTask, updateSampleTask} from "../../features/templates/actions";
 import {SampleTask} from "../../features/templates/interface";
 import {useHistory, useParams} from "react-router-dom";
-import {CloseSquareTwoTone, DeleteFilled, DownloadOutlined} from "@ant-design/icons";
+import {CloseSquareTwoTone, DeleteFilled, DownloadOutlined, SearchOutlined} from "@ant-design/icons";
 import {Divider} from "antd/es";
 import {approveSampleTask} from "../../features/admin/actions";
 const {Title, Text} = Typography;
@@ -17,10 +17,10 @@ type SampleTaskProps = {
     getSampleTask: (sampleTaskId: number) => void;
     approveSampleTask: (sampleTaskId: number, choiceId: number, selections: number[]) => void;
     removeSampleTask: (sampleTaskId: number) => void;
-    updateSampleTask: (sampleTaskId: number, name: string, uid: string, content: string, metadata: string) => void;
+    updateSampleTask: (sampleTaskId: number, name: string, uid: string, content: string, metadata: string, pending: boolean, refreshable: boolean) => void;
 };
 
-const SampleTaskPage: React.FC<SampleTaskProps> = (
+const AdminSampleTaskPage: React.FC<SampleTaskProps> = (
     {
         sampleTask, getSampleTask, removeSampleTask, updateSampleTask, approveSampleTask
     }
@@ -49,7 +49,7 @@ const SampleTaskPage: React.FC<SampleTaskProps> = (
             message.error('name cannot be empty');
             return;
         }
-        updateSampleTask(sampleTask.id, input, sampleTask.uid, sampleTask.content, sampleTask.metadata);
+        updateSampleTask(sampleTask.id, input, sampleTask.uid, sampleTask.content, sampleTask.metadata, sampleTask.pending, sampleTask.refreshable);
     }
 
     const metadataChange = (input: any) => {
@@ -58,7 +58,7 @@ const SampleTaskPage: React.FC<SampleTaskProps> = (
             message.error('metadata cannot be empty');
             return;
         }
-        updateSampleTask(sampleTask.id, sampleTask.name, sampleTask.uid, sampleTask.content, input);
+        updateSampleTask(sampleTask.id, sampleTask.name, sampleTask.uid, sampleTask.content, input, sampleTask.pending, sampleTask.refreshable);
     }
 
     const uidChange = (input: any) => {
@@ -67,12 +67,11 @@ const SampleTaskPage: React.FC<SampleTaskProps> = (
             message.error('uid cannot be empty');
             return;
         }
-        updateSampleTask(sampleTask.id, sampleTask.name, input, sampleTask.content, sampleTask.metadata);
+        updateSampleTask(sampleTask.id, sampleTask.name, input, sampleTask.content, sampleTask.metadata, sampleTask.pending, sampleTask.refreshable);
     }
 
-    const onChoiceChange = (input: any) => {
-        console.log(input);
-        setSelections(input);
+    const onChoiceChange = (e: any) => {
+        setSelections(Array.isArray(e) ? e : [e]);
     }
 
     const onConfirm = (choiceId: number) => {
@@ -83,6 +82,19 @@ const SampleTaskPage: React.FC<SampleTaskProps> = (
         }
 
         approveSampleTask(sampleTask.id, choiceId, selections);
+    }
+
+    const onChangePending = (value: any) => {
+        console.log(value.target.checked);
+        if (sampleTask) {
+            updateSampleTask(sampleTask.id, sampleTask.name, sampleTask.uid, sampleTask.content, sampleTask.metadata, value.target.checked, sampleTask.refreshable);
+        }
+    }
+
+    const onChangeRefreshable = (value: any) => {
+        if (sampleTask) {
+            updateSampleTask(sampleTask.id, sampleTask.name, sampleTask.uid, sampleTask.content, sampleTask.metadata, sampleTask.pending, value.target.checked);
+        }
     }
 
     const choice = sampleTask.choice;
@@ -96,6 +108,13 @@ const SampleTaskPage: React.FC<SampleTaskProps> = (
                     editable={{onChange: metadataChange}}>{sampleTask.metadata}</Text></Tag>
                 (<Text
                 editable={{onChange: uidChange}}>{sampleTask.uid}</Text>)
+                &nbsp;&nbsp;&nbsp;
+                <Checkbox checked={sampleTask.pending} onChange={onChangePending}>
+                    pending
+                </Checkbox>
+                <Checkbox checked={sampleTask.refreshable} onChange={onChangeRefreshable}>
+                    refreshable
+                </Checkbox>
             </div>
             <Divider/>
             <div>
@@ -117,6 +136,13 @@ const SampleTaskPage: React.FC<SampleTaskProps> = (
                     </Button>
                 </div>}
             </div>
+            <Divider/>
+            <div>
+                <Button type="primary" shape="round" icon={<SearchOutlined />}
+                        onClick={() => history.push(`/sampleTasks/${sampleTask.id}`)}>
+                    View Content
+                </Button>
+            </div>
         </div>
     );
 };
@@ -131,4 +157,4 @@ export default connect(mapStateToProps, {
     removeSampleTask,
     updateSampleTask,
     approveSampleTask
-})(SampleTaskPage);
+})(AdminSampleTaskPage);

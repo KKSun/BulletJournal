@@ -170,7 +170,8 @@ const StepsPage: React.FC<StepsProps> = (
     const selectAll = (choice: Choice) => {
         const curStep = getCurrentStep();
         const selections = getSelections();
-        selections[choice.id] = curStep.choices.filter(c => c.id === choice.id)[0].selections.map(s => s.id);
+        selections[choice.id] = curStep.choices.filter(c => c.id === choice.id)[0].selections
+            .filter(selection => !curStep.excludedSelections.includes(selection.id)).map(s => s.id);
         setSelections(selections);
         setShowConfirmButton(curStep.choices.every(c => selections[c.id] && selections[c.id].length > 0));
     }
@@ -197,7 +198,7 @@ const StepsPage: React.FC<StepsProps> = (
                     onChange={(e) => onChoiceChange(e, choice)}
                     placeholder={choice.name}
                     value={getChoiceValue(choice)}
-                    style={{padding: '3px', minWidth: choice.multiple ? '50%' : '5%'}}
+                    style={{padding: '3px', minWidth: choice.multiple ? '50%' : '25%'}}
                     allowClear>
                 {choice.selections.filter(selection => !curStep.excludedSelections.includes(selection.id))
                     .map(selection => {
@@ -297,7 +298,9 @@ const StepsPage: React.FC<StepsProps> = (
         return [];
     }
 
-    const onRemoveTask = (id: number) => {
+    const onRemoveTask = (e: React.MouseEvent<HTMLElement>, id: number) => {
+        e.preventDefault();
+        e.stopPropagation();
         const data = sampleTasks.filter(t => t.id !== id);
         sampleTasksReceived(data, scrollId);
         localStorage.setItem(SAMPLE_TASKS, JSON.stringify({
@@ -332,10 +335,10 @@ const StepsPage: React.FC<StepsProps> = (
                     </div>
                     {tasks.length > 0 && <div className='sample-tasks'>
                         {tasks.map((sampleTask: SampleTask) => {
-                            return <div className='sample-task'>
+                            return <div className='sample-task' onClick={() => window.location.href = `${window.location.protocol}//${window.location.host}/public/sampleTasks/${sampleTask.id}`}>
                                 <div className='remove-task-icon'>
                                     <Tooltip title='Remove this'>
-                                        <CloseOutlined onClick={() => onRemoveTask(sampleTask.id)}/>
+                                        <CloseOutlined onClick={(e) => onRemoveTask(e, sampleTask.id)}/>
                                     </Tooltip>
                                 </div>
                                 {sampleTask.name}
