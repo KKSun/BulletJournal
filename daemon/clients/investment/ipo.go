@@ -3,8 +3,9 @@ package investment
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/singerdmx/BulletJournal/daemon/logging"
 	"time"
+
+	"github.com/singerdmx/BulletJournal/daemon/logging"
 
 	"github.com/pkg/errors"
 
@@ -56,7 +57,7 @@ func NewIPOClient() (*TemplateClient, error) {
 
 func (c *IPOClient) FetchData() error {
 	logger := *logging.GetLogger()
-	yearFrom, monthFrom, dayFrom := time.Now().AddDate(0, -1, 0).Date()
+	yearFrom, monthFrom, dayFrom := time.Now().AddDate(0, 0, -6).Date()
 	yearTo, monthTo, dayTo := time.Now().AddDate(0, 1, 0).Date()
 
 	var fetchedData []IPO
@@ -101,7 +102,7 @@ func (c *IPOClient) SendData() (*[]uint64, *[]uint64, error) {
 		target := c.data.IPO[i]
 		availBefore := target.Date
 		t, _ := time.Parse(layoutISO, availBefore)
-		t = t.AddDate(0, 6, 0)
+		t = t.AddDate(0, 0, 0)
 		dueDate := target.Date
 		if len(dueDate) > 10 {
 			dueDate = dueDate[0:10] // yyyy-MM-dd

@@ -8,8 +8,11 @@ import (
 )
 
 type Investment struct {
-	Service Streaming
+	ServiceStreaming Streaming
 }
+
+type void struct{}
+var member void
 
 func (i *Investment) pull(params ...interface{}) {
 	logger := *logging.GetLogger()
@@ -19,9 +22,9 @@ func (i *Investment) pull(params ...interface{}) {
 	earningClient, _ := investment.NewTemplateClient(investment.EarningsTemplate)
 	dividendsClient, _ := investment.NewTemplateClient(investment.DividendsTemplate)
 
-	retrieveData(ipoClient, i.Service)
-	retrieveData(earningClient, i.Service)
-	retrieveData(dividendsClient, i.Service)
+	retrieveData(ipoClient, i.ServiceStreaming)
+	retrieveData(earningClient, i.ServiceStreaming)
+	retrieveData(dividendsClient, i.ServiceStreaming)
 }
 
 func retrieveData(templateClient *investment.TemplateClient, streaming Streaming) {
@@ -37,12 +40,23 @@ func retrieveData(templateClient *investment.TemplateClient, streaming Streaming
 		return
 	}
 
+	set := make(map[uint64]void)
 	for _, sampleTaskId := range *created {
+		if _, exists := set[sampleTaskId]; exists {
+			continue
+		}
 		logger.Printf("Created Sample Task %d", sampleTaskId)
-		// streaming <- &StreamingMessage{Message: sampleTaskId}
+		set[sampleTaskId] = member
+		time.Sleep(30 * time.Second)
+		streaming.ServiceChannel <- &StreamingMessage{Message: sampleTaskId}
 	}
 	for _, sampleTaskId := range *modified {
+		if _, exists := set[sampleTaskId]; exists {
+			continue
+		}
 		logger.Printf("Modified Sample Task %d", sampleTaskId)
-		// streaming <- &StreamingMessage{Message: sampleTaskId}
+		set[sampleTaskId] = member
+		time.Sleep(30 * time.Second)
+		streaming.ServiceChannel <- &StreamingMessage{Message: sampleTaskId}
 	}
 }

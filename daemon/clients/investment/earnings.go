@@ -3,8 +3,9 @@ package investment
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/singerdmx/BulletJournal/daemon/logging"
 	"time"
+
+	"github.com/singerdmx/BulletJournal/daemon/logging"
 
 	"github.com/pkg/errors"
 	"github.com/singerdmx/BulletJournal/daemon/persistence"
@@ -62,7 +63,7 @@ func NewEarningsClient() (*TemplateClient, error) {
 
 func (c *EarningClient) FetchData() error {
 	logger := *logging.GetLogger()
-	yearFrom, monthFrom, dayFrom := time.Now().AddDate(0, -1, 0).Date()
+	yearFrom, monthFrom, dayFrom := time.Now().AddDate(0, 0, -6).Date()
 	yearTo, monthTo, dayTo := time.Now().AddDate(0, 1, 0).Date()
 
 	var fetchedData []EarningData
@@ -113,7 +114,7 @@ func (c *EarningClient) SendData() (*[]uint64, *[]uint64, error) {
 		target := c.data.EarningData[i]
 		availBefore := target.Date
 		t, _ := time.Parse(layoutISO, availBefore)
-		t = t.AddDate(0, 6, 0)
+		t = t.AddDate(0, 0, 0)
 		dueDate := target.Date
 		if len(dueDate) > 10 {
 			dueDate = dueDate[0:10] // yyyy-MM-dd

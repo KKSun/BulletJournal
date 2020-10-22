@@ -3,8 +3,9 @@ package investment
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/singerdmx/BulletJournal/daemon/logging"
 	"time"
+
+	"github.com/singerdmx/BulletJournal/daemon/logging"
 
 	"github.com/pkg/errors"
 
@@ -48,7 +49,7 @@ func NewDividendsClient() (*TemplateClient, error) {
 
 func (c *DividendsClient) FetchData() error {
 	logger := *logging.GetLogger()
-	yearFrom, monthFrom, dayFrom := time.Now().AddDate(0, -3, 0).Date()
+	yearFrom, monthFrom, dayFrom := time.Now().AddDate(0, 0, -16).Date()
 	yearTo, monthTo, dayTo := time.Now().AddDate(0, 1, 0).Date()
 
 	var fetchedData []Dividends
@@ -102,7 +103,7 @@ func (c *DividendsClient) SendData() (*[]uint64, *[]uint64, error) {
 		target := c.data.Dividends[i]
 		availBefore := target.Date
 		t, _ := time.Parse(layoutISO, availBefore)
-		t = t.AddDate(0, 6, 0)
+		t = t.AddDate(0, 0, 0)
 		dueDate := target.ExDividendDate
 		if len(dueDate) > 10 {
 			dueDate = dueDate[0:10] // yyyy-MM-dd

@@ -1,7 +1,9 @@
 package com.bulletjournal.templates.repository.model;
 
+import com.bulletjournal.templates.controller.model.Choice;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import org.apache.commons.lang3.StringUtils;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
@@ -71,13 +73,22 @@ public class StockTickerDetails {
     }
 
     public com.bulletjournal.templates.controller.model.StockTickerDetails toPresentationModel() {
+        if (StringUtils.isBlank(details)) {
+            return new com.bulletjournal.templates.controller.model.StockTickerDetails(
+                    ticker, details, selection.toPresentationModel());
+        }
         JsonObject json = GSON.fromJson(
                 details, JsonObject.class);
+        Long marketCap = null;
+        if (json.has("marketcap")) {
+            marketCap = json.get("marketcap").getAsLong();
+        }
+
         return new com.bulletjournal.templates.controller.model.StockTickerDetails(ticker, details, selection.toPresentationModel(),
                 json.get("logo").getAsString(),
                 json.get("country").getAsString(),
                 json.get("industry").getAsString(),
-                json.get("marketcap").getAsLong(),
+                marketCap,
                 json.get("employees").getAsLong(),
                 json.get("phone").getAsString(),
                 json.get("ceo").getAsString(),
@@ -92,5 +103,23 @@ public class StockTickerDetails {
                 GSON.fromJson(json.get("tags").getAsJsonArray(), String[].class),
                 GSON.fromJson(json.get("similar").getAsJsonArray(), String[].class)
         );
+    }
+
+    public com.bulletjournal.templates.controller.model.StockTickerDetails toPresentationModelWithChoice() {
+        com.bulletjournal.templates.controller.model.StockTickerDetails stockTickerDetails = toPresentationModel();
+        if (selection != null) {
+            stockTickerDetails.getSelection().setChoice(new Choice(selection.getChoice().getId()));
+        }
+        return stockTickerDetails;
+    }
+
+    @Override
+    public String toString() {
+        return "StockTickerDetails{" +
+                "ticker='" + ticker + '\'' +
+                ", expirationTime=" + expirationTime +
+                ", details='" + details + '\'' +
+                ", selection=" + selection +
+                '}';
     }
 }
