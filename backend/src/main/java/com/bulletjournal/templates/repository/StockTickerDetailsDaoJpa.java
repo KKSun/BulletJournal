@@ -1,6 +1,5 @@
 package com.bulletjournal.templates.repository;
 
-import com.bulletjournal.exceptions.BadRequestException;
 import com.bulletjournal.templates.clients.StockApiClient;
 import com.bulletjournal.templates.controller.model.StockTickerDetails;
 import com.bulletjournal.templates.repository.model.Selection;
@@ -56,7 +55,7 @@ public class StockTickerDetailsDaoJpa {
             resp = this.stockApiClient.getCompany(symbol);
         } catch (Exception ex) {
             LOGGER.info("Unable to find StockTickerDetails for {}", symbol);
-            LOGGER.error("stockApiClient#getCompany failed", ex);
+            // LOGGER.error("stockApiClient#getCompany failed", ex);
             return null;
         }
 
@@ -95,8 +94,12 @@ public class StockTickerDetailsDaoJpa {
             case "financial services": //JPM
                 selectionId = 254L;
                 break;
+            case "utilities":
+                selectionId = 260L;
+                break;
             default:
-                throw new BadRequestException("Sector " + sector + " not found");
+                LOGGER.error("Sector {} not found. Unable to find StockTickerDetails for {}", sector, symbol);
+                return null;
         }
         Selection selection = this.selectionDaoJpa.getById(selectionId);
 

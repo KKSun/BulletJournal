@@ -39,6 +39,10 @@ public class Task extends ProjectItem {
 
     private TaskStatus status;
 
+    private Long reminderDateTime;
+
+    private String location;
+
     @Expose
     @Valid
     private List<Task> subTasks = new ArrayList<>();
@@ -47,9 +51,16 @@ public class Task extends ProjectItem {
     }
 
     public Task(Long id, @NotNull User owner, List<User> assignees, String dueDate, String dueTime,
-            @NotBlank String timezone, @NotNull String name, Integer duration, @NotNull Project project,
-            List<Label> labels, ReminderSetting reminderSetting, String recurrenceRule, Long createdAt, Long updatedAt,
-            TaskStatus status) {
+                @NotBlank String timezone, @NotNull String name, Integer duration, @NotNull Project project,
+                List<Label> labels, ReminderSetting reminderSetting, String recurrenceRule, Long createdAt, Long updatedAt,
+                TaskStatus status, Long reminderDateTime) {
+        this(id, owner, assignees, dueDate, dueTime, timezone, name, duration, project, labels, reminderSetting, recurrenceRule, createdAt, updatedAt, status, reminderDateTime, null);
+    }
+
+    public Task(Long id, @NotNull User owner, List<User> assignees, String dueDate, String dueTime,
+                @NotBlank String timezone, @NotNull String name, Integer duration, @NotNull Project project,
+                List<Label> labels, ReminderSetting reminderSetting, String recurrenceRule, Long createdAt, Long updatedAt,
+                TaskStatus status, Long reminderDateTime, String location) {
         super(id, name, owner, project, labels);
         this.assignees = assignees;
         this.dueDate = dueDate;
@@ -60,10 +71,12 @@ public class Task extends ProjectItem {
         if (reminderSetting.hasBefore() || reminderSetting.hasDate()) {
             this.reminderSetting = reminderSetting;
         }
+        this.reminderDateTime = reminderDateTime;
         this.recurrenceRule = recurrenceRule;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
         getView(this);
+        this.location = location;
     }
 
     @Override
@@ -167,6 +180,22 @@ public class Task extends ProjectItem {
         this.endTime = endTime;
     }
 
+    public Long getReminderDateTime() {
+        return reminderDateTime;
+    }
+
+    public void setReminderDateTime(Long reminderDateTime) {
+        this.reminderDateTime = reminderDateTime;
+    }
+
+    public String getLocation() {
+        return location;
+    }
+
+    public void setLocation(String location) {
+        this.location = location;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o)
@@ -182,13 +211,14 @@ public class Task extends ProjectItem {
                 && Objects.equals(getReminderSetting(), task.getReminderSetting())
                 && Objects.equals(getRecurrenceRule(), task.getRecurrenceRule())
                 && Objects.equals(getSubTasks(), task.getSubTasks())
-                && Objects.equals(getStatus(), task.getStatus());
+                && Objects.equals(getStatus(), task.getStatus())
+                && Objects.equals(getReminderDateTime(), task.getReminderDateTime());
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), getAssignees(), getDueDate(), getDueTime(), getTimezone(), getDuration(),
-                getReminderSetting(), getRecurrenceRule(), getSubTasks(), getStatus());
+                getReminderSetting(), getRecurrenceRule(), getSubTasks(), getStatus(), getReminderDateTime());
     }
 
     public void clone(Task task) {
@@ -204,6 +234,8 @@ public class Task extends ProjectItem {
         }
         this.setRecurrenceRule(task.getRecurrenceRule());
         this.setAssignees(task.getAssignees());
+        this.setReminderDateTime(task.getReminderDateTime());
+        this.setLocation(task.location);
     }
 
     public static Task getView(Task task) {

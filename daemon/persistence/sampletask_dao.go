@@ -3,10 +3,10 @@ package persistence
 import (
 	"context"
 	"errors"
-	"github.com/singerdmx/BulletJournal/daemon/config"
+	"time"
+
 	"github.com/singerdmx/BulletJournal/daemon/logging"
 	"gorm.io/gorm"
-	"time"
 )
 
 const LAYOUT = "2006-01-02"
@@ -16,19 +16,11 @@ type SampleTaskDao struct {
 	Db  *gorm.DB
 }
 
-func InitializeSampleTaskDao(config *config.Config, ctx context.Context) *SampleTaskDao {
+func NewSampleTaskDao(ctx context.Context, db *gorm.DB) (*SampleTaskDao, error) {
 	return &SampleTaskDao{
 		Ctx: ctx,
-		Db:  NewDB(config),
-	}
-}
-
-func NewSampleTaskDao() (*SampleTaskDao, error) {
-
-	sampleTaskDao := SampleTaskDao{
-		Db: DB,
-	}
-	return &sampleTaskDao, nil
+		Db:  db, // NewDB(config),
+	}, nil
 }
 
 func (s *SampleTaskDao) Upsert(t *SampleTask) (uint64, bool) {
@@ -60,8 +52,13 @@ func (s *SampleTaskDao) Upsert(t *SampleTask) (uint64, bool) {
 	//	return 0, false
 	//}
 
+	// Update all tasks referring this sample task if they have different name
+	if t.Name != prevReport.Name {
+		s.Db.Exec("update tasks set name = ? where sample_task_id = ?", t.Name, t.ID)
+	}
+
 	// Update the SampleTask for only Content, DueDate, availableBefore, DueTime
-	s.Db.Model(&t).Where("uid = ?", t.Uid).Select("raw", "due_date", "due_time", "available_before").
+	s.Db.Model(&t).Where("uid = ?", t.Uid).Select("raw", "due_date", "due_time", "available_before", "name").
 		Updates(map[string]interface{}{
 			"raw":              t.Raw,
 			"due_date":         t.DueDate,

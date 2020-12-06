@@ -83,23 +83,55 @@ public class StockTickerDetails {
         if (json.has("marketcap")) {
             marketCap = json.get("marketcap").getAsLong();
         }
+        Long employees = null;
+        if (json.has("employees")) {
+            employees = json.get("employees").getAsLong();
+        }
+        String hqState = null;
+        if (json.has("hq_state")) {
+            hqState = json.get("hq_state").getAsString();
+        }
+        String phone = null;
+        if (json.has("phone")) {
+            phone = json.get("phone").getAsString();
+        }
+        String logo = null;
+        if (json.has("logo")) {
+            logo = json.get("logo").getAsString();
+        }
+        String country = null;
+        if (json.has("country")) {
+            country = json.get("country").getAsString();
+        }
+        String exchangeSymbol = null;
+        if (json.has("exchangeSymbol")) {
+            exchangeSymbol = json.get("exchangeSymbol").getAsString();
+        }
+        String hqAddress = null;
+        if (json.has("hq_address")) {
+            hqAddress = json.get("hq_address").getAsString();
+        }
+        String hqCountry = null;
+        if (json.has("hq_country")) {
+            hqCountry = json.get("hq_country").getAsString();
+        }
 
         return new com.bulletjournal.templates.controller.model.StockTickerDetails(ticker, details, selection.toPresentationModel(),
-                json.get("logo").getAsString(),
-                json.get("country").getAsString(),
+                logo,
+                country,
                 json.get("industry").getAsString(),
                 marketCap,
-                json.get("employees").getAsLong(),
-                json.get("phone").getAsString(),
+                employees,
+                phone,
                 json.get("ceo").getAsString(),
                 json.get("url").getAsString(),
                 json.get("description").getAsString(),
                 json.get("exchange").getAsString(),
                 json.get("name").getAsString(),
-                json.get("exchangeSymbol").getAsString(),
-                json.get("hq_address").getAsString(),
-                json.get("hq_state").getAsString(),
-                json.get("hq_country").getAsString(),
+                exchangeSymbol,
+                hqAddress,
+                hqState,
+                hqCountry,
                 GSON.fromJson(json.get("tags").getAsJsonArray(), String[].class),
                 GSON.fromJson(json.get("similar").getAsJsonArray(), String[].class)
         );
