@@ -1,26 +1,21 @@
 // page display contents of tasks
 // react imports
 import React, {useEffect, useState} from 'react';
-import { useHistory, useParams } from 'react-router-dom';
-import { connect } from 'react-redux';
+import {useHistory, useParams} from 'react-router-dom';
+import {connect} from 'react-redux';
 // features
 //actions
-import {
-  completeTask, deleteContent,
-  deleteTask,
-  getTask,
-  updateTaskContents,
-} from '../../features/tasks/actions';
-import { IState } from '../../store';
+import {completeTask, deleteContent, deleteTask, getTask, updateTaskContents,} from '../../features/tasks/actions';
+import {IState} from '../../store';
 // antd imports
-import { Avatar, Badge, Popconfirm, Popover, Tooltip } from 'antd';
+import {Avatar, Badge, Popconfirm, Popover, Tooltip} from 'antd';
 import {
   CheckCircleTwoTone,
   DeleteTwoTone,
-  SyncOutlined,
-  UpSquareOutlined,
-  TeamOutlined,
   PlusOutlined,
+  SyncOutlined,
+  TeamOutlined,
+  UpSquareOutlined,
 } from '@ant-design/icons';
 // modals import
 import EditTask from '../../components/modals/edit-task.component';
@@ -29,27 +24,20 @@ import ShareProjectItem from '../../components/modals/share-project-item.compone
 
 import './task-page.styles.less';
 import 'braft-editor/dist/index.css';
-import {
-  ProjectItemUIType,
-  ProjectType,
-} from '../../features/project/constants';
+import {ProjectItemUIType, ProjectType,} from '../../features/project/constants';
 // components
-import TaskDetailPage, { TaskProps } from './task-detail.pages';
+import TaskDetailPage, {TaskProps} from './task-detail.pages';
 import ContentEditorDrawer from '../../components/content-editor/content-editor-drawer.component';
 import LabelManagement from '../project/label-management.compoent';
-import {
-  Container,
-  Button as FloatButton,
-  lightColors,
-  darkColors,
-} from 'react-floating-action-button';
-import { getTaskAssigneesPopoverContent } from '../../components/project-item/task-item.component';
+import {Button as FloatButton, Container, darkColors, lightColors,} from 'react-floating-action-button';
+import {getTaskAssigneesPopoverContent} from '../../components/project-item/task-item.component';
 import {setDisplayMore, setDisplayRevision} from "../../features/content/actions";
 import {Content} from "../../features/myBuJo/interface";
 import {DeleteOutlined, EditOutlined, HighlightOutlined} from "@ant-design/icons/lib";
 import {getProject} from "../../features/project/actions";
 import {Project} from "../../features/project/interface";
 import {contentEditable} from "../note/note.pages";
+import {resizeFloatButton} from "../../utils/Util";
 
 interface TaskPageHandler {
   myself: string;
@@ -88,7 +76,7 @@ const TaskPage: React.FC<TaskPageHandler & TaskProps> = (props) => {
   // get id of task from router
   const { taskId } = useParams();
   // state control drawer displaying
-  const [showEditor, setEditorShow] = useState(false);
+  const [showEditor, setEditorShow] = useState(true);
   const [labelEditable, setLabelEditable] = useState(false);
   // hook history in router
   const history = useHistory();
@@ -96,6 +84,7 @@ const TaskPage: React.FC<TaskPageHandler & TaskProps> = (props) => {
   // listening on the empty state working as componentDidmount
   useEffect(() => {
     taskId && getTask(parseInt(taskId));
+   // eslint-disable-next-line
   }, [taskId]);
 
   useEffect(() => {
@@ -106,6 +95,7 @@ const TaskPage: React.FC<TaskPageHandler & TaskProps> = (props) => {
     setDisplayMore(false);
     setDisplayRevision(false);
     getProject(task.projectId);
+    resizeFloatButton(4);
   }, [task]);
 
   if (!task) return null;
@@ -148,42 +138,42 @@ const TaskPage: React.FC<TaskPageHandler & TaskProps> = (props) => {
         <FloatButton
             tooltip="Go to Parent BuJo"
             onClick={() => history.push(`/projects/${task.projectId}`)}
-            styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+            styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
         >
           <UpSquareOutlined/>
         </FloatButton>
         <FloatButton
             tooltip="Refresh Contents"
             onClick={handleRefresh}
-            styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+            styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
         >
           <SyncOutlined/>
         </FloatButton>
         {contentEditable(myself, content, task, project) && <FloatButton
             tooltip="Delete Content"
             onClick={handleDelete}
-            styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+            styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
         >
           <DeleteOutlined/>
         </FloatButton>}
         {content && content.revisions.length > 1 && contentEditable(myself, content, task, project) && <FloatButton
             tooltip={`View Revision History (${content.revisions.length - 1})`}
             onClick={handleOpenRevisions}
-            styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+            styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
         >
           <HighlightOutlined/>
         </FloatButton>}
         {contentEditable(myself, content, task, project) && <FloatButton
             tooltip="Edit Content"
             onClick={handleEdit}
-            styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+            styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
         >
           <EditOutlined/>
         </FloatButton>}
         <FloatButton
             tooltip="Add Content"
             onClick={createHandler}
-            styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+            styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
         >
           <PlusOutlined/>
         </FloatButton>
@@ -247,6 +237,36 @@ const TaskPage: React.FC<TaskPageHandler & TaskProps> = (props) => {
     history.push(`/projects/${task.projectId}`);
   };
 
+  const getCompleteButton = () => {
+    if (!task.recurrenceRule) {
+      return <Tooltip title="Complete Task">
+        <div>
+          <CheckCircleTwoTone
+              twoToneColor="#52c41a"
+              onClick={() => handleCompleteTaskClick()}
+          />
+        </div>
+      </Tooltip>
+    }
+
+    return <Popconfirm
+        title="One Time Only or All Events"
+        okText="Series"
+        cancelText="Occurrence"
+        onConfirm={() => handleCompleteTaskClick()}
+        onCancel={() => history.push('/bujo/today')}
+        placement="bottom"
+    >
+      <Tooltip title="Complete Task">
+        <div>
+          <CheckCircleTwoTone
+              twoToneColor="#52c41a"
+          />
+        </div>
+      </Tooltip>
+    </Popconfirm>
+  }
+
   const taskOperation = () => {
     return (
       <div className="task-operation">
@@ -284,14 +304,7 @@ const TaskPage: React.FC<TaskPageHandler & TaskProps> = (props) => {
             </div>
           </Popconfirm>
         </Tooltip>
-        <Tooltip title="Complete Task">
-          <div>
-            <CheckCircleTwoTone
-              twoToneColor="#52c41a"
-              onClick={() => handleCompleteTaskClick()}
-            />
-          </div>
-        </Tooltip>
+        {getCompleteButton()}
       </div>
     );
   };

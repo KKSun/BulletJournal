@@ -1,5 +1,8 @@
 import {doDelete, doFetch, doPatch, doPost, doPut} from './api-helper';
 import {ReminderSetting, Task, TaskStatus} from '../features/tasks/interface';
+import { Content } from '../features/myBuJo/interface';
+import { Quill } from 'react-quill';
+import { createHTML } from '../components/content/content-item.component';
 
 export const fetchTasks = (
   projectId: number,
@@ -115,7 +118,8 @@ export const createTask = (
   dueTime?: string,
   duration?: number,
   recurrenceRule?: string,
-  labels?: number[]
+  labels?: number[],
+  location?: string,
 ) => {
   const postBody = JSON.stringify({
     name: name,
@@ -127,6 +131,7 @@ export const createTask = (
     recurrenceRule: recurrenceRule,
     timezone: timezone,
     labels: labels,
+    location: location,
   });
   return doPost(`/api/projects/${projectId}/tasks`, postBody)
     .then((res) => res.json())
@@ -153,6 +158,7 @@ export const updateTask = (
   duration?: number,
   timezone?: string,
   reminderSetting?: ReminderSetting,
+  location?: string,
   recurrenceRule?: string,
   labels?: number[]
 ) => {
@@ -164,6 +170,7 @@ export const updateTask = (
     duration: duration,
     timezone: timezone,
     reminderSetting: reminderSetting,
+    location: location,
     recurrenceRule: recurrenceRule,
     labels: labels,
   });
@@ -358,22 +365,6 @@ export const setTaskStatus = (taskId: number, taskStatus: TaskStatus, timezone: 
   });
 };
 
-export const patchRevisionContents = (
-    taskId: number,
-    contentId: number,
-    revisionContents: string[],
-    etag: string,
-) => {
-  const patchBody = JSON.stringify({
-    revisionContents: revisionContents,
-  });
-  return doPost(`/api/tasks/${taskId}/contents/${contentId}/patchRevisionContents`, patchBody, etag)
-      .then((res) => res.json())
-      .catch((err) => {
-        throw Error(err);
-      });
-};
-
 export const getTaskStatistics = (
     projectIds: number[],
     timezone: string,
@@ -399,3 +390,31 @@ export const getTaskStatistics = (
         throw Error(err.message);
       });
 }
+
+export const shareTaskByEmail = (
+  taskId: number,
+  contents: Content[],
+  emails: string[],
+  targetUser?: string,
+  targetGroup?: number,
+) => {
+  const Delta = Quill.import('delta');
+  let contentsHTML : Content[] = [];
+  contents.forEach((content) => {
+    let contentHTML = {...content};
+    contentHTML['text'] = createHTML(new Delta(JSON.parse(content.text)['delta']));
+    contentsHTML.push(contentHTML);
+  })
+  
+  const postBody = JSON.stringify({
+    targetUser: targetUser,
+    targetGroup: targetGroup,
+    emails: emails,
+    contents: contentsHTML,
+  });
+  return doPost(`/api/tasks/${taskId}/exportEmail`, postBody)
+    .then((res) => (res))
+    .catch((err) => {
+      throw Error(err);
+    });
+};

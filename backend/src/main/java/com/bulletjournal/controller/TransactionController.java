@@ -2,21 +2,39 @@ package com.bulletjournal.controller;
 
 import com.bulletjournal.clients.UserClient;
 import com.bulletjournal.contents.ContentAction;
+import com.bulletjournal.contents.ContentType;
 import com.bulletjournal.controller.models.*;
+import com.bulletjournal.controller.models.params.*;
 import com.bulletjournal.controller.utils.EtagGenerator;
 import com.bulletjournal.controller.utils.ZonedDateTimeHelper;
+import com.bulletjournal.es.ESUtil;
 import com.bulletjournal.exceptions.BadRequestException;
 import com.bulletjournal.ledger.FrequencyType;
 import com.bulletjournal.ledger.LedgerSummary;
 import com.bulletjournal.ledger.LedgerSummaryCalculator;
 import com.bulletjournal.ledger.LedgerSummaryType;
-import com.bulletjournal.notifications.*;
+import com.bulletjournal.messaging.FreeMarkerClient;
+import com.bulletjournal.messaging.MessagingService;
+import com.bulletjournal.notifications.Auditable;
+import com.bulletjournal.notifications.Event;
+import com.bulletjournal.notifications.NotificationService;
+import com.bulletjournal.notifications.RemoveElasticsearchDocumentEvent;
+import com.bulletjournal.notifications.informed.Informed;
+import com.bulletjournal.notifications.informed.RemoveTransactionEvent;
+import com.bulletjournal.notifications.informed.UpdateTransactionPayerEvent;
+import com.bulletjournal.repository.GroupDaoJpa;
+import com.bulletjournal.repository.ProjectDaoJpa;
 import com.bulletjournal.repository.TransactionDaoJpa;
+import com.bulletjournal.repository.TransactionRepository;
 import com.bulletjournal.repository.models.ContentModel;
 import com.bulletjournal.repository.models.ProjectItemModel;
 import com.bulletjournal.repository.models.TransactionContent;
+import freemarker.template.TemplateException;
+import java.io.IOException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -30,25 +48,28 @@ import javax.validation.constraints.NotNull;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.ZonedDateTime;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static org.springframework.http.HttpHeaders.IF_NONE_MATCH;
 
 @RestController
 public class TransactionController {
+    private static final Logger LOGGER = LoggerFactory.getLogger(TransactionController.class);
+
     protected static final String TRANSACTIONS_ROUTE = "/api/projects/{projectId}/transactions";
+    protected static final String RECURRING_TRANSACTIONS_ROUTE = "/api/projects/{projectId}/recurringTransactions";
     protected static final String TRANSACTION_ROUTE = "/api/transactions/{transactionId}";
     protected static final String TRANSACTION_SET_LABELS_ROUTE = "/api/transactions/{transactionId}/setLabels";
+    protected static final String TRANSACTION_SET_COLOR_ROUTE = "/api/transactions/{transactionId}/setColor";
+    protected static final String TRANSACTION_SET_BANK_ACCOUNT_ROUTE = "/api/transactions/{transactionId}/setBankAccount";
     protected static final String MOVE_TRANSACTION_ROUTE = "/api/transactions/{transactionId}/move";
     protected static final String SHARE_TRANSACTION_ROUTE = "/api/transactions/{transactionId}/share";
     protected static final String ADD_CONTENT_ROUTE = "/api/transactions/{transactionId}/addContent";
     protected static final String CONTENT_ROUTE = "/api/transactions/{transactionId}/contents/{contentId}";
     protected static final String CONTENTS_ROUTE = "/api/transactions/{transactionId}/contents";
     protected static final String CONTENT_REVISIONS_ROUTE = "/api/transactions/{transactionId}/contents/{contentId}/revisions/{revisionId}";
-    protected static final String REVISION_CONTENT_ROUTE = "/api/transactions/{transactionId}/contents/{contentId}/patchRevisionContents";
+    protected static final String TRANSACTION_EXPORT_EMAIL_ROUTE = "/api/transactions/{transactionId}/exportEmail";
 
     @Autowired
     private LedgerSummaryCalculator ledgerSummaryCalculator;
@@ -57,10 +78,33 @@ public class TransactionController {
     private TransactionDaoJpa transactionDaoJpa;
 
     @Autowired
+    private ProjectDaoJpa projectDaoJpa;
+
+    @Autowired
+    private TransactionRepository transactionRepository;
+
+    @Autowired
     private NotificationService notificationService;
 
     @Autowired
     private UserClient userClient;
+
+    @Autowired
+    private FreeMarkerClient freeMarkerClient;
+
+    @Autowired
+    private MessagingService messagingService;
+
+    @Autowired
+    private GroupDaoJpa groupDaoJpa;
+
+    @GetMapping(RECURRING_TRANSACTIONS_ROUTE)
+    public List<Transaction> getRecurringTransactions(@NotNull @PathVariable Long projectId) {
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        List<Transaction> transactions = this.transactionDaoJpa.getRecurringTransactions(username, projectId);
+        transactions = ProjectItem.addAvatar(transactions, this.userClient);
+        return transactions;
+    }
 
     @GetMapping(TRANSACTIONS_ROUTE)
     public ResponseEntity<?> getTransactions(@NotNull @PathVariable Long projectId,
@@ -135,7 +179,7 @@ public class TransactionController {
     public Transaction createTransaction(@NotNull @PathVariable Long projectId,
                                          @Valid @RequestBody CreateTransactionParams createTransactionParams) {
         String username = MDC.get(UserClient.USER_NAME_KEY);
-        com.bulletjournal.repository.models.Transaction createdTransaction = transactionDaoJpa.create(projectId,
+        com.bulletjournal.repository.models.Transaction createdTransaction = this.transactionDaoJpa.create(projectId,
                 username, createTransactionParams);
         String projectName = createdTransaction.getProject().getName();
 
@@ -144,6 +188,7 @@ public class TransactionController {
                         + "##",
                 username, createdTransaction.getId(), Timestamp.from(Instant.now()),
                 ContentAction.ADD_TRANSACTION));
+
         return createdTransaction.toPresentationModel();
     }
 
@@ -178,32 +223,74 @@ public class TransactionController {
     }
 
     @DeleteMapping(TRANSACTION_ROUTE)
-    public void deleteTransaction(@NotNull @PathVariable Long transactionId) {
+    public void deleteTransaction(@NotNull @PathVariable Long transactionId,
+                                  @RequestParam(required = false) Optional<String> dateTime) {
         String username = MDC.get(UserClient.USER_NAME_KEY);
 
         List<String> deleteESDocumentIds = this.transactionDaoJpa.getDeleteESDocumentIdsForProjectItem(username, transactionId);
 
         Pair<List<Event>, com.bulletjournal.repository.models.Transaction> res = this.transactionDaoJpa
-                .delete(username, transactionId);
+                .delete(username, transactionId, dateTime.orElse(null));
         List<Event> events = res.getLeft();
-        Long projectId = res.getRight().getProject().getId();
-        String transactionName = res.getRight().getName();
         if (!events.isEmpty()) {
+            Long projectId = res.getRight().getProject().getId();
+            String transactionName = res.getRight().getName();
             this.notificationService.inform(new RemoveTransactionEvent(events, username));
+            this.notificationService.deleteESDocument(new RemoveElasticsearchDocumentEvent(deleteESDocumentIds));
+            this.notificationService.trackActivity(new Auditable(projectId,
+                    "deleted Transaction ##" + transactionName + "##", username, transactionId,
+                    Timestamp.from(Instant.now()), ContentAction.DELETE_TRANSACTION));
         }
-        this.notificationService.deleteESDocument(new RemoveElasticsearchDocumentEvent(deleteESDocumentIds));
-        this.notificationService.trackActivity(new Auditable(projectId,
-                "deleted Transaction ##" + transactionName + "##", username, transactionId,
-                Timestamp.from(Instant.now()), ContentAction.DELETE_TRANSACTION));
     }
 
     @DeleteMapping(TRANSACTIONS_ROUTE)
     public void deleteTransactions(@NotNull @PathVariable Long projectId,
-                                   @NotNull @RequestParam List<Long> transactions) {
+                                   @NotNull @RequestParam List<String> transactions) {
         // curl -X DELETE
         // "http://localhost:8080/api/projects/11/transactions?transactions=12&transactions=11&transactions=13&transactions=14"
         // -H "accept: */*"
-        transactions.forEach(id -> this.deleteTransaction(id));
+        if (transactions.isEmpty()) {
+            return;
+        }
+
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        com.bulletjournal.repository.models.Project project = this.projectDaoJpa.getProject(projectId, username);
+        List<Long> transactionIds = new ArrayList<>();
+        for (String transaction : transactions) {
+            int separator = transaction.indexOf('#');
+            if (separator < 0) {
+                transactionIds.add(Long.parseLong(transaction));
+                continue;
+            }
+
+            this.transactionDaoJpa.delete(username,
+                    Long.parseLong(transaction.substring(0, separator)),
+                    transaction.substring(separator + 1));
+        }
+
+        if (transactionIds.isEmpty()) {
+            return;
+        }
+        List<com.bulletjournal.repository.models.Transaction> transactionList =
+                this.transactionDaoJpa.findAllById(transactionIds, project).stream()
+                        .filter(Objects::nonNull)
+                        .map(t -> (com.bulletjournal.repository.models.Transaction) t)
+                        .collect(Collectors.toList());
+        if (transactionList.isEmpty()) {
+            return;
+        }
+
+        this.transactionRepository.deleteInBatch(transactionList);
+
+        List<String> deleteESDocumentIds = ESUtil.getProjectItemSearchIndexIds(transactionIds, ContentType.TRANSACTION);
+        this.notificationService.deleteESDocument(new RemoveElasticsearchDocumentEvent(deleteESDocumentIds));
+
+        for (com.bulletjournal.repository.models.Transaction transaction : transactionList) {
+            this.notificationService.trackActivity(
+                    new Auditable(projectId, "deleted Transaction ##" + transaction.getName() +
+                            "## in BuJo ##" + project.getName() + "##", username,
+                            transaction.getId(), Timestamp.from(Instant.now()), ContentAction.DELETE_TRANSACTION));
+        }
     }
 
     @PutMapping(TRANSACTION_SET_LABELS_ROUTE)
@@ -211,6 +298,22 @@ public class TransactionController {
                                  @NotNull @RequestBody List<Long> labels) {
         String username = MDC.get(UserClient.USER_NAME_KEY);
         this.notificationService.inform(this.transactionDaoJpa.setLabels(username, transactionId, labels));
+        return getTransaction(transactionId);
+    }
+
+    @PutMapping(TRANSACTION_SET_COLOR_ROUTE)
+    public Transaction setColor(@NotNull @PathVariable Long transactionId, @RequestBody Optional<String> color) {
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        this.transactionDaoJpa.setColor(username, transactionId, color.orElse(null));
+        return getTransaction(transactionId);
+    }
+
+    @PutMapping(TRANSACTION_SET_BANK_ACCOUNT_ROUTE)
+    public Transaction setBankAccount(@NotNull @PathVariable Long transactionId,
+                                @RequestBody Optional<String> bankAccount) {
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        this.transactionDaoJpa.setBankAccount(username, transactionId,
+                bankAccount.isPresent() ? Long.parseLong(bankAccount.get()) : null);
         return getTransaction(transactionId);
     }
 
@@ -331,14 +434,25 @@ public class TransactionController {
         return Revision.addAvatar(revision, this.userClient);
     }
 
-    @PostMapping(REVISION_CONTENT_ROUTE)
-    public Content patchRevisionContents(@NotNull @PathVariable Long transactionId,
-                                      @NotNull @PathVariable Long contentId,
-                                      @NotNull @RequestBody  RevisionContentsParams revisionContentsParams,
-                                      @RequestHeader(IF_NONE_MATCH) String etag) {
+    @PostMapping(TRANSACTION_EXPORT_EMAIL_ROUTE)
+    public void exportTransactionAsEmail(
+            @NotNull @PathVariable Long transactionId,
+            @NotNull @RequestBody ExportProjectItemAsEmailParams params) {
         String username = MDC.get(UserClient.USER_NAME_KEY);
-        TransactionContent content = this.transactionDaoJpa.patchRevisionContentHistory(
-                contentId, transactionId, username, revisionContentsParams.getRevisionContents(), etag);
-        return content == null ? new Content() : content.toPresentationModel();
+
+        Set<String> targetEmails =
+            groupDaoJpa.getEmails(params.getTargetGroup(), params.getTargetUser());
+        targetEmails.addAll(params.getEmails());
+
+        com.bulletjournal.repository.models.Transaction transaction =
+            transactionDaoJpa.getProjectItem(transactionId, username);
+        try {
+            String html = freeMarkerClient.convertProjectItemIntoHtmlString(transaction, username, params.getContents());
+            String emailSubject = username + " is sharing transaction <" +  transaction.getName() + "> with you.";
+            messagingService.sendExportedHtmlContentEmailToUsers(emailSubject, html, targetEmails);
+        }
+        catch (IOException | TemplateException e) {
+            LOGGER.error("Failed to convert transaction into HTML string");
+        }
     }
 }

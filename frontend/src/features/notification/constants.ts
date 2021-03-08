@@ -23,4 +23,8 @@ export enum EventType {
     RevokeSharableEvent = 'RevokeSharableEvent',
     SetTaskStatusEvent = 'SetTaskStatusEvent',
     NewSampleTaskEvent = 'NewSampleTaskEvent',
+    RequestProjectItemWriteAccessEvent = 'RequestProjectItemWriteAccessEvent',
+    RequestProjectItemWriteAccessResponseEvent = 'RequestProjectItemWriteAccessResponseEvent',
+    ShareGroupEvent = 'ShareGroupEvent',
+    DisableGroupShareEvent = 'DisableGroupShareEvent'
 }

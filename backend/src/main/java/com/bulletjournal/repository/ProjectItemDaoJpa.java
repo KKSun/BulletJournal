@@ -2,23 +2,33 @@ package com.bulletjournal.repository;
 
 import com.bulletjournal.authz.AuthorizationService;
 import com.bulletjournal.authz.Operation;
+import com.bulletjournal.clients.DaemonServiceClient;
 import com.bulletjournal.config.ContentRevisionConfig;
 import com.bulletjournal.contents.ContentAction;
 import com.bulletjournal.contents.ContentType;
 import com.bulletjournal.controller.models.*;
+import com.bulletjournal.controller.models.params.RevokeProjectItemSharableParams;
+import com.bulletjournal.controller.models.params.ShareProjectItemParams;
+import com.bulletjournal.controller.models.params.UpdateContentParams;
 import com.bulletjournal.controller.utils.EtagGenerator;
 import com.bulletjournal.exceptions.BadRequestException;
 import com.bulletjournal.exceptions.ResourceNotFoundException;
-import com.bulletjournal.notifications.*;
-import com.bulletjournal.redis.RedisCachedContentRepository;
-import com.bulletjournal.redis.models.CachedContent;
+import com.bulletjournal.exceptions.UnAuthorizedException;
+import com.bulletjournal.messaging.MessagingService;
+import com.bulletjournal.notifications.Auditable;
+import com.bulletjournal.notifications.ContentBatch;
+import com.bulletjournal.notifications.Event;
+import com.bulletjournal.notifications.NotificationService;
+import com.bulletjournal.notifications.informed.RevokeSharableEvent;
+import com.bulletjournal.notifications.informed.SetLabelEvent;
+import com.bulletjournal.notifications.informed.ShareProjectItemEvent;
 import com.bulletjournal.repository.models.ContentModel;
 import com.bulletjournal.repository.models.Group;
 import com.bulletjournal.repository.models.ProjectItemModel;
 import com.bulletjournal.repository.models.UserGroup;
 import com.bulletjournal.util.ContentDiffTool;
 import com.bulletjournal.util.DeltaContent;
-import com.bulletjournal.util.DeltaConverter;
+import com.bulletjournal.util.MapWithExpiration;
 import com.google.common.base.Preconditions;
 import com.google.gson.Gson;
 import org.apache.commons.lang3.StringUtils;
@@ -46,6 +56,8 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
     @Autowired
     protected LabelDaoJpa labelDaoJpa;
     @Autowired
+    protected MessagingService messagingService;
+    @Autowired
     private AuthorizationService authorizationService;
     @Autowired
     private GroupDaoJpa groupDaoJpa;
@@ -62,7 +74,9 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
     @Autowired
     protected NotificationService notificationService;
     @Autowired
-    private RedisCachedContentRepository redisCachedContentRepository;
+    private DaemonServiceClient daemonServiceClient;
+
+    private final MapWithExpiration contentUpdateLock = new MapWithExpiration();
 
     abstract <T extends ProjectItemModel> JpaRepository<T, Long> getJpaRepository();
 
@@ -70,7 +84,10 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
 
     abstract <T extends ProjectItemModel> List<K> findContents(T projectItem);
 
+    public abstract K newContent(String text);
+
     abstract List<Long> findItemLabelsByProject(com.bulletjournal.repository.models.Project project);
+
 
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
     public <T extends ProjectItemModel> SharableLink generatePublicItemLink(Long projectItemId, String requester,
@@ -174,7 +191,6 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
             T projectItem = projectItems.get(i);
             content.setProjectItem(projectItem);
             content.setOwner(owner);
-            content.setText(DeltaConverter.supplementContentText(content.getText(), false));
             batch.add(content);
         }
         if (!batch.isEmpty()) {
@@ -185,7 +201,7 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
             return;
         }
 
-        ContentBatch left = new ContentBatch(
+        ContentBatch<K, T> left = new ContentBatch<>(
                 contents.subList(CONTENT_BATCH_SIZE, contents.size()),
                 projectItems.subList(CONTENT_BATCH_SIZE, projectItems.size()),
                 owners.subList(CONTENT_BATCH_SIZE, owners.size()));
@@ -196,6 +212,8 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
     public <T extends ProjectItemModel> Pair<ContentModel, T> addContent(Long projectItemId, String owner, K content) {
         T projectItem = getProjectItem(projectItemId, owner);
+        projectItem.setUpdatedAt(Timestamp.from(Instant.now()));
+        this.getJpaRepository().save(projectItem);
         populateContent(owner, content, projectItem);
         this.getContentJpaRepository().save(content);
         return Pair.of(content, projectItem);
@@ -204,7 +222,7 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
     private <T extends ProjectItemModel> void populateContent(String owner, K content, T projectItem) {
         content.setProjectItem(projectItem);
         content.setOwner(owner);
-        content.setText(DeltaConverter.supplementContentText(content.getText()));
+        adjustContentText(content.getText(), content);
         updateRevision(content, owner, content.getText(), content.getText());
     }
 
@@ -227,45 +245,6 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
     }
 
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
-    public K patchRevisionContentHistory(Long contentId, Long projectItemId,
-                                         String requester, List<String> revisionContents,
-                                         String etag) {
-        LOGGER.info(GSON.toJson(revisionContents));
-
-        getProjectItem(projectItemId, requester); // permission check
-        int n = revisionContents.size();
-        String lastRevisionContent = revisionContents.get(n - 1);
-        K content;
-        synchronized (this) {
-            content = getContent(contentId, requester);
-            if (redisCachedContentRepository.existsById(contentId)) {
-                return content;
-            }
-            // read etag from DB content text column
-            String noteEtag = EtagGenerator.generateEtag(EtagGenerator.HashAlgorithm.MD5,
-                    EtagGenerator.HashType.TO_HASHCODE, content.getText());
-            LOGGER.info("web etag =" + etag + " and db etag =" + noteEtag);
-            if (!Objects.equals(etag, noteEtag)) {
-                throw new BadRequestException("Invalid etag");
-            }
-            content.setText(DeltaConverter.mergeContentText(lastRevisionContent, content.getText()) );
-            content = this.getContentJpaRepository().saveAndFlush(content);
-            redisCachedContentRepository.save(new CachedContent(contentId));
-        }
-
-        // iterate pairs
-        for (int i = 0; i < n - 1; ++i) {
-            String first = revisionContents.get(i);
-            String second = revisionContents.get(i + 1);
-            LOGGER.info("first=" + first + "\t second=" + second);
-            updateRevision(content, requester, second, first);
-        }
-        content = this.getContentJpaRepository().saveAndFlush(content);
-        LOGGER.info("patchRevisionContentHistory return {}", content);
-        return content;
-    }
-
-    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
     public <T extends ProjectItemModel> Pair<K, T> updateContent(Long contentId, Long projectItemId, String requester,
                                                                  UpdateContentParams updateContentParams, Optional<String> etag) {
         T projectItem = getProjectItem(projectItemId, requester);
@@ -275,77 +254,52 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
         this.authorizationService.checkAuthorizedToOperateOnContent(content.getOwner(), requester, ContentType.CONTENT,
                 Operation.UPDATE, content.getId(), projectItem.getOwner(), projectItem.getProject().getOwner(),
                 projectItem);
-        String mdiff = updateContentParams.getMdiff();
-        String diff = updateContentParams.getDiff();
-        if (mdiff != null && diff != null) {
-            LOGGER.error("Cannot have both diff and mdiff");
-            throw new BadRequestException("Cannot have both diff and mdiff");
+        if (this.contentUpdateLock.get(requester + "#" + contentId.toString()) != null) {
+            return Pair.of(content, projectItem);
         }
 
         String oldText = content.getText();
-        etag.ifPresent(e -> {
+        if (etag.isPresent()) {
             String itemEtag = EtagGenerator.generateEtag(EtagGenerator.HashAlgorithm.MD5,
                     EtagGenerator.HashType.TO_HASHCODE, oldText);
             if (!Objects.equals(etag.get(), itemEtag)) {
-                LOGGER.error("Invalid Etag: {} v.s. {}, oldText: {}", itemEtag, etag.get(), oldText);
-                throw new BadRequestException("Invalid Etag");
+                LOGGER.info("Invalid Etag: {} v.s. {}, oldText: {}; created a new content", itemEtag, etag.get(), oldText);
+                return (Pair<K, T>) this.addContent(
+                        projectItemId, requester, this.newContent(updateContentParams.getText()));
             }
-        });
-
-        if (diff != null) {
-            // from web: {delta: YYYYY2, ###html###:ZZZZZZ2}, diff
-            Map diffMap = GSON.fromJson(diff, LinkedHashMap.class);
-            DeltaContent oldContent = new DeltaContent(oldText);
-
-            // web delta and html
-            DeltaContent newContent = new DeltaContent(updateContentParams.getText());
-
-            // mobile mdelta
-            newContent.setMdeltaList(oldContent.getMdeltaList());
-
-            // mobile mdiff
-            List<LinkedHashMap> newMdiff = DeltaConverter.diffToMdiff(diffMap);
-            List<Object> oldMdiffList = oldContent.getMdiffOrDefault(new ArrayList<>());
-            oldMdiffList.add(newMdiff);
-            newContent.setMdiff(oldMdiffList);
-
-            LOGGER.info("web -> mobile, the content = " + newContent.toJSON());
-            content.setText(newContent.toJSON());
-            // save to db: {delta: YYYYY2, ###html###:ZZZZZZ2, mdelta:XXXXXX, mdiff: [d1] }
-        } else if (mdiff != null) {
-            List mdiffList = GSON.fromJson(mdiff, List.class);
-            // from mobile: {mdelta:XXXXXX }, mdiff
-            // mdiff: [{"retain":5,"attributes":{"b":true}}],mdelta: [{"insert":"hello","attributes":{"b":true}},{"insert":"\n"}]
-            DeltaContent oldContent = new DeltaContent(oldText);
-
-            // mobile mdelta
-            DeltaContent newContent = new DeltaContent(updateContentParams.getText());
-
-            // web delta
-            newContent.setDeltaMap(oldContent.getDeltaMap());
-
-            // web diff
-            List<Object> oldDiffList = oldContent.getDiffOrDefault(new ArrayList<>());
-            Map newDiff = DeltaConverter.mdiffToDiff(mdiffList);
-            oldDiffList.add(newDiff);
-            newContent.setDiff(oldDiffList);
-
-            LOGGER.info("mobile -> web, the content = " + newContent.toJSON());
-            content.setText(newContent.toJSON());
-            // save to db: {delta: YYYYY, mdelta:XXXXXX2, diff: [d2] }
-        } else {
-            LOGGER.error("Cannot have null in both diff and mdiff");
-            throw new BadRequestException("Cannot have null in both diff and mdiff");
         }
+
+        this.contentUpdateLock.put(requester + "#" + contentId.toString(), requester, 1_000);
+        projectItem.setUpdatedAt(Timestamp.from(Instant.now()));
+        this.getJpaRepository().save(projectItem);
+        return updateContent(requester, updateContentParams, projectItem, content, oldText);
+    }
+
+    private <T extends ProjectItemModel> Pair<K, T> updateContent(
+            String requester, UpdateContentParams updateContentParams,
+            T projectItem, K content, String oldText) {
+
+        adjustContentText(updateContentParams.getText(), content);
 
         updateRevision(content, requester, content.getText(), oldText);
         this.getContentJpaRepository().save(content);
         return Pair.of(content, projectItem);
     }
 
+    private void adjustContentText(String newText, K content) {
+        DeltaContent newContent = new DeltaContent(newText);
+        // call grpc to get html string from delta
+        String htmlString = this.daemonServiceClient.convertDeltaToHtml(newContent.getDeltaOpsString());
+        LOGGER.info("htmlString: {}", htmlString);
+        newContent.setHtml(htmlString);
+        content.setText(newContent.toJSON());
+    }
+
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
     public <T extends ProjectItemModel> T deleteContent(Long contentId, Long projectItemId, String requester) {
         T projectItem = getProjectItem(projectItemId, requester);
+        projectItem.setUpdatedAt(Timestamp.from(Instant.now()));
+        this.getJpaRepository().save(projectItem);
         K content = getContent(contentId, requester);
         Preconditions.checkState(Objects.equals(projectItem.getId(), content.getProjectItem().getId()),
                 "ProjectItem ID mismatch");
@@ -373,7 +327,7 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
 
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
     public SetLabelEvent setLabels(String requester, Long projectItemId, List<Long> labels) {
-        ProjectItemModel projectItem = getProjectItem(projectItemId, requester);
+        ProjectItemModel<ProjectItem> projectItem = getProjectItem(projectItemId, requester);
         projectItem.setLabels(labels);
         Set<UserGroup> targetUsers = projectItem.getProject().getGroup().getAcceptedUsers();
         List<Event> events = new ArrayList<>();
@@ -396,7 +350,7 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
                 "ProjectItem ID mismatch");
         Revision[] revisions = GSON.fromJson(content.getRevisions(), Revision[].class);
         Preconditions.checkNotNull(revisions, "Revisions for Content: {} is null", contentId);
-        if (!Arrays.stream(revisions).anyMatch(revision -> Objects.equals(revision.getId(), revisionId))) {
+        if (Arrays.stream(revisions).noneMatch(revision -> Objects.equals(revision.getId(), revisionId))) {
             throw new BadRequestException("Invalid revisionId: " + revisionId + " for content: " + contentId);
         }
 
@@ -417,10 +371,6 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
     }
 
     private void updateRevision(K content, String requester, String newText, String oldText) {
-        if (!newText.contains(DeltaContent.HTML_TAG)) {
-            LOGGER.info("{} does not contain {}", newText, DeltaContent.HTML_TAG);
-            return;
-        }
         String revisionsJson = content.getRevisions();
         if (revisionsJson == null) {
             revisionsJson = "[]";
@@ -496,5 +446,14 @@ public abstract class ProjectItemDaoJpa<K extends ContentModel> {
 
         return new ArrayList<>(projectItemIdMap.values());
     }
-}
 
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
+    public List<ProjectItemModel> findAllById(Iterable<Long> ids,
+                                              com.bulletjournal.repository.models.Project project) {
+        List<ProjectItemModel> items = this.getJpaRepository().findAllById(ids);
+        if (items.stream().anyMatch(item -> !Objects.equals(project.getId(), item.getProject().getId()))) {
+            throw new UnAuthorizedException("Not in project");
+        }
+        return items;
+    }
+}

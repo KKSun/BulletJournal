@@ -29,6 +29,8 @@ import {setDisplayMore, setDisplayRevision} from "../../features/content/actions
 import {Content, ProjectItem} from "../../features/myBuJo/interface";
 import {getProject} from "../../features/project/actions";
 import {Project} from "../../features/project/interface";
+import NoteColorSettingDialog from '../../components/modals/note-color.component';
+import {resizeFloatButton} from "../../utils/Util";
 
 interface NotePageHandler {
     myself: string;
@@ -68,7 +70,7 @@ const NotePage: React.FC<NotePageHandler & NoteProps> = (props) => {
     // get id of note from router
     const {noteId} = useParams();
     // state control drawer displaying
-    const [showEditor, setEditorShow] = useState(false);
+    const [showEditor, setEditorShow] = useState(true);
     const [labelEditable, setLabelEditable] = useState(false);
 
     // listening on the empty state working as componentDidmount
@@ -84,6 +86,7 @@ const NotePage: React.FC<NotePageHandler & NoteProps> = (props) => {
         setDisplayMore(false);
         setDisplayRevision(false);
         getProject(note.projectId);
+        resizeFloatButton(4);
     }, [note]);
 
     // show drawer
@@ -125,42 +128,43 @@ const NotePage: React.FC<NotePageHandler & NoteProps> = (props) => {
             <FloatButton
                 tooltip="Go to Parent BuJo"
                 onClick={() => history.push(`/projects/${note.projectId}`)}
-                styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+                styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
             >
                 <UpSquareOutlined/>
             </FloatButton>
+            <NoteColorSettingDialog />
             <FloatButton
                 tooltip="Refresh Contents"
                 onClick={handleRefresh}
-                styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+                styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
             >
                 <SyncOutlined/>
             </FloatButton>
             {contentEditable(myself, content, note, project) && <FloatButton
                 tooltip="Delete Content"
                 onClick={handleDelete}
-                styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+                styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
             >
                 <DeleteOutlined/>
             </FloatButton>}
             {content && content.revisions.length > 1 && contentEditable(myself, content, note, project) && <FloatButton
                 tooltip={`View Revision History (${content.revisions.length - 1})`}
                 onClick={handleOpenRevisions}
-                styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+                styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
             >
                 <HighlightOutlined/>
             </FloatButton>}
             {contentEditable(myself, content, note, project) && <FloatButton
                 tooltip="Edit Content"
                 onClick={handleEdit}
-                styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+                styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
             >
                 <EditOutlined/>
             </FloatButton>}
             <FloatButton
                 tooltip="Add Content"
                 onClick={createHandler}
-                styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+                styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
             >
                 <PlusOutlined/>
             </FloatButton>

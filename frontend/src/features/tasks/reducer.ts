@@ -48,6 +48,7 @@ export type CreateTask = {
   dueTime?: string;
   duration?: number;
   recurrenceRule?: string;
+  location?: string;
   labels?: number[];
 };
 
@@ -151,6 +152,7 @@ export type PatchTask = {
   dueTime?: string;
   duration?: number;
   reminderSetting?: ReminderSetting;
+  location?: string;
   recurrenceRule?: string;
   labels?: number[];
 };
@@ -215,13 +217,6 @@ export type SetTaskStatus = {
   type: ProjectItemUIType;
 };
 
-export type PatchRevisionContents = {
-  taskId: number;
-  contentId: number;
-  revisionContents: string[];
-  etag: string;
-}
-
 export type GetTaskStatisticsAction = {
   projectIds: number[];
   timezone: string;
@@ -233,8 +228,16 @@ export type TaskStatisticsAction = {
   projectStatistics: TaskStatistics;
 }
 
+export type ShareTaskByEmailAction = {
+  taskId: number,
+  contents: Content[],
+  emails: string[],
+  targetUser?: string,
+  targetGroup?: number,
+};
+
 let initialState = {
-  addTaskVisible: false,
+  addTaskVisible: true,
   contents: [] as Array<Content>,
   task: undefined as Task | undefined,
   tasks: [] as Array<Task>,
@@ -384,12 +387,12 @@ const slice = createSlice({
     TaskContentPatch: (state, action: PayloadAction<PatchContent>) => state,
     SampleTaskContentPatch: (state, action: PayloadAction<PatchContent>) => state,
     TaskStatusSet: (state, action: PayloadAction<SetTaskStatus>) => state,
-    TaskPatchRevisionContents: (state, action: PayloadAction<PatchRevisionContents>) => state,
     GetTaskStatistics: (state, action: PayloadAction<GetTaskStatisticsAction>) => state,
     TaskStatisticsReceived: (state, action: PayloadAction<TaskStatisticsAction>) => {
       const { projectStatistics } = action.payload;
       state.projectStatistics = projectStatistics;
     },
+    TaskShareByEmail: (state, action: PayloadAction<ShareTaskByEmailAction>) => state,
   },
 });
 

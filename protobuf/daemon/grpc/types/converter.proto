@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package types;
+
+option go_package = "github.com/singerdmx/BulletJournal/protobuf/daemon/grpc/types";
+option java_multiple_files = true;
+option java_package = "com.bulletjournal.protobuf.daemon.grpc.types";
+option java_outer_classname = "ConverterProto";
+
+message ConvertJsonObjectsToHtmlRequest {
+    // The requested json objects array
+    string delta_string = 1;
+}
+
+message ConvertJsonObjectsToHtmlResponse {
+    // The html converted from Json Objects Array
+    string html_output = 1;
+}

@@ -1,12 +1,12 @@
-import { all, call, put, select, takeLatest } from 'redux-saga/effects';
-import { message } from 'antd';
+import {all, call, put, select, takeLatest} from 'redux-saga/effects';
+import {message} from 'antd';
 import {
-  actions as transactionsActions,
+  actions as transactionsActions, ChangeBankAccountBalanceAction,
   CreateContent,
   CreateTransaction,
   DeleteContent,
   DeleteTransaction,
-  DeleteTransactions,
+  DeleteTransactions, GetBankAccountTransactionsAction,
   GetTransaction,
   GetTransactionsByPayer,
   MoveTransaction,
@@ -14,41 +14,48 @@ import {
   PatchTransaction,
   SetTransactionLabels,
   ShareTransaction,
+  ShareTransactionByEmailAction,
   TransactionApiErrorAction,
+  UpdateRecurringTransactions, UpdateTransactionBankAccountAction,
+  UpdateTransactionColorAction,
   UpdateTransactionContentRevision,
   UpdateTransactionContents,
   UpdateTransactions,
-  PatchRevisionContents
 } from './reducer';
-import { IState } from '../../store';
-import { PayloadAction } from 'redux-starter-kit';
+import {IState} from '../../store';
+import {PayloadAction} from 'redux-starter-kit';
 import {
   addContent,
   createTransaction,
   deleteContent,
   deleteTransactionById,
   deleteTransactions as deleteTransactionsApi,
+  fetchRecurringTransactions,
   fetchTransactions,
   getContentRevision,
   getContents,
   getTransactionById,
   moveToTargetProject,
+  putTransactionColor,
+  putTransactionBankAccount,
   setTransactionLabels,
+  shareTransactionByEmail,
   shareTransactionWithOther,
   updateContent,
   updateTransaction,
-  patchRevisionContents
 } from '../../apis/transactionApis';
-import { LedgerSummary } from './interface';
-import { getProjectItemsAfterUpdateSelect } from '../myBuJo/actions';
-import { updateTransactionContents } from './actions';
-import { Content, ProjectItems, Revision } from '../myBuJo/interface';
+import {BankAccount, LedgerSummary, Transaction, TransactionView} from './interface';
+import {getProjectItemsAfterUpdateSelect} from '../myBuJo/actions';
+import {updateRecurringTransactions, updateTransactionContents} from './actions';
+import {Content, ProjectItems, Revision} from '../myBuJo/interface';
 import {projectLabelsUpdate, updateItemsByLabels} from '../label/actions';
-import { ProjectItemUIType } from "../project/constants";
-import { ContentType } from "../myBuJo/constants";
-import { recentItemsReceived } from "../recent/actions";
+import {ProjectItemUIType} from "../project/constants";
+import {ContentType} from "../myBuJo/constants";
+import {recentItemsReceived} from "../recent/actions";
 import {setDisplayMore, updateTargetContent} from "../content/actions";
 import {reloadReceived} from "../myself/actions";
+import {fetchBankAccounts, fetchBankAccountTransactions, setAccountBalance} from "../../apis/bankAccountApis";
+import {actions as myselfActions} from "../myself/reducer";
 
 
 function* transactionApiErrorReceived(
@@ -98,6 +105,24 @@ function* transactionsUpdate(action: PayloadAction<UpdateTransactions>) {
   }
 }
 
+function* recurringTransactionsUpdate(action: PayloadAction<UpdateRecurringTransactions>) {
+  try {
+    const {projectId} = action.payload;
+    const data = yield call(fetchRecurringTransactions, projectId);
+    yield put(
+        transactionsActions.recurringTransactionsReceived({
+          transactions: data,
+        })
+    );
+  } catch (error) {
+    if (error.message === 'reload') {
+      yield put(reloadReceived(true));
+    } else {
+      yield call(message.error, `recurringTransactionsUpdate Error Received: ${error}`);
+    }
+  }
+}
+
 function* transactionCreate(action: PayloadAction<CreateTransaction>) {
   try {
     const {
@@ -108,9 +133,13 @@ function* transactionCreate(action: PayloadAction<CreateTransaction>) {
       transactionType,
       date,
       timezone,
+      location,
       labels,
       time,
-    } = action.payload;
+      recurrenceRule,
+      bankAccountId,
+      onSuccess
+  } = action.payload;
     yield call(
       createTransaction,
       projectId,
@@ -118,10 +147,13 @@ function* transactionCreate(action: PayloadAction<CreateTransaction>) {
       name,
       payer,
       transactionType,
-      date,
       timezone,
+      location,
+      date,
+      time,
+      recurrenceRule,
       labels,
-      time
+      bankAccountId
     );
 
     const state: IState = yield select();
@@ -142,6 +174,9 @@ function* transactionCreate(action: PayloadAction<CreateTransaction>) {
     );
     if (state.project.project) {
       yield put(projectLabelsUpdate(state.project.project.id, state.project.project.shared));
+    }
+    if (onSuccess) {
+      onSuccess();
     }
   } catch (error) {
     if (error.message === 'reload') {
@@ -207,16 +242,15 @@ function* getTransaction(action: PayloadAction<GetTransaction>) {
 
 function* deleteTransaction(action: PayloadAction<DeleteTransaction>) {
   try {
-    const { transactionId, type } = action.payload;
+    const { transactionId, type, dateTime, onSuccess } = action.payload;
     const state: IState = yield select();
-    const transaction = yield call(getTransactionById, transactionId);
+    const transaction : Transaction = yield call(getTransactionById, transactionId);
+    yield call(deleteTransactionById, transactionId, dateTime);
 
-    yield put(
-      transactionsActions.transactionReceived({ transaction: undefined })
-    );
-    yield call(deleteTransactionById, transactionId);
-
-    if (type === ProjectItemUIType.PROJECT || type === ProjectItemUIType.PAYER) {
+    if (onSuccess) {
+      onSuccess();
+    }
+    if (type === ProjectItemUIType.PROJECT || type === ProjectItemUIType.PAYER || type === ProjectItemUIType.MANAGE_RECURRING) {
       const data = yield call(
         fetchTransactions,
         transaction.projectId,
@@ -251,7 +285,7 @@ function* deleteTransaction(action: PayloadAction<DeleteTransaction>) {
         projectItem = { ...projectItem };
         if (projectItem.transactions) {
           projectItem.transactions = projectItem.transactions.filter(
-            (transaction) => transaction.id !== transactionId
+            (t) => t.id !== transactionId
           );
         }
         labelItems.push(projectItem);
@@ -261,13 +295,17 @@ function* deleteTransaction(action: PayloadAction<DeleteTransaction>) {
 
     if (type === ProjectItemUIType.PAYER) {
       const transactionsByPayer = state.transaction.transactionsByPayer.filter(
-        (t) => t.id !== transactionId
+          (t) => t !== transaction
       );
       yield put(
-        transactionsActions.transactionsByPayerReceived({
-          transactionsByPayer: transactionsByPayer,
-        })
+          transactionsActions.transactionsByPayerReceived({
+            transactionsByPayer: transactionsByPayer,
+          })
       );
+    }
+
+    if (type === ProjectItemUIType.MANAGE_RECURRING) {
+      yield put(updateRecurringTransactions(transaction.projectId));
     }
 
     if (type === ProjectItemUIType.RECENT) {
@@ -276,9 +314,13 @@ function* deleteTransaction(action: PayloadAction<DeleteTransaction>) {
     }
 
     yield put(transactionsActions.transactionReceived({transaction: undefined}));
-    if (state.project.project && ![ProjectItemUIType.LABEL, ProjectItemUIType.TODAY, ProjectItemUIType.RECENT].includes(type)) {
+    if (state.project.project && type && ![ProjectItemUIType.LABEL, ProjectItemUIType.TODAY, ProjectItemUIType.RECENT].includes(type)) {
       yield put(projectLabelsUpdate(state.project.project.id, state.project.project.shared));
     }
+    yield call(message.success, `Transaction '${transaction.name}' deleted successfully`);
+    yield put(
+        transactionsActions.transactionReceived({ transaction: undefined })
+    );
   } catch (error) {
     if (error.message === 'reload') {
       yield put(reloadReceived(true));
@@ -290,12 +332,12 @@ function* deleteTransaction(action: PayloadAction<DeleteTransaction>) {
 
 function* deleteTransactions(action: PayloadAction<DeleteTransactions>) {
   try {
-    const { projectId, transactionsId, type } = action.payload;
+    const { projectId, transactions, type } = action.payload;
     const state: IState = yield select();
 
     if (type === ProjectItemUIType.PAYER) {
       const transactionsByPayer = state.transaction.transactionsByPayer.filter(
-        (t) => !transactionsId.includes(t.id)
+        (t) => !transactions.includes(t)
       );
       yield put(
         transactionsActions.transactionsByPayerReceived({
@@ -307,7 +349,7 @@ function* deleteTransactions(action: PayloadAction<DeleteTransactions>) {
     yield put(
       transactionsActions.transactionReceived({ transaction: undefined })
     );
-    yield call(deleteTransactionsApi, projectId, transactionsId);
+    yield call(deleteTransactionsApi, projectId, transactions);
 
     const data = yield call(
       fetchTransactions,
@@ -348,7 +390,10 @@ function* patchTransaction(action: PayloadAction<PatchTransaction>) {
       date,
       time,
       timezone,
+      location,
       labels,
+      recurrenceRule,
+      bankAccountId
     } = action.payload;
     const data = yield call(
       updateTransaction,
@@ -360,7 +405,10 @@ function* patchTransaction(action: PayloadAction<PatchTransaction>) {
       date,
       time,
       timezone,
-      labels
+      location,
+      labels,
+      recurrenceRule,
+      bankAccountId
     );
     const projectId = data.projectId;
     const state: IState = yield select();
@@ -649,31 +697,146 @@ function* getTransactionsByPayer(
   }
 }
 
-function* patchTransactionRevisionContents(action: PayloadAction<PatchRevisionContents>) {
+function* updateTransactionColor(
+  action: PayloadAction<UpdateTransactionColorAction>
+) {
   try {
-    const {transactionId, contentId, revisionContents, etag} = action.payload;
-    const data : Content = yield call(patchRevisionContents, transactionId, contentId, revisionContents, etag);
-    const state: IState = yield select();
-    if (data && state.content.content && data.id === state.content.content.id) {
-      yield put(updateTargetContent(data));
-    }
-    if (data && data.id) {
-      const contents : Content[] = [];
-      state.transaction.contents.forEach(c => {
-        if (c.id === data.id) {
-          contents.push(data);
-        } else {
-          contents.push(c);
-        }
-      });
-      yield put(
-          transactionsActions.transactionContentsReceived({
-            contents: contents,
-          })
-      );
-    }
+    const {transactionId, color} = action.payload;
+    const data : Transaction = yield call(
+      putTransactionColor,
+      transactionId,
+      color,
+    );
+
+    yield put(transactionsActions.transactionReceived({transaction: data}));
   } catch (error) {
-    yield put(reloadReceived(true));
+    if (error.message === 'reload') {
+      yield put(reloadReceived(true));
+    } else {
+      yield call(message.error, `Set Transaction Color Fail: ${error}`);
+    }
+  }
+}
+
+function* updateTransactionBankAccount(
+    action: PayloadAction<UpdateTransactionBankAccountAction>
+) {
+  try {
+    const {transactionId, bankAccount} = action.payload;
+    const data : Transaction = yield call(
+        putTransactionBankAccount,
+        transactionId,
+        bankAccount,
+    );
+
+    yield put(transactionsActions.transactionReceived({transaction: data}));
+    const response = yield call(fetchBankAccounts);
+    const bankAccounts : BankAccount[] = yield response.json();
+    yield put(
+        myselfActions.myselfDataReceived({
+          bankAccounts: bankAccounts
+        })
+    );
+  } catch (error) {
+    if (error.message === 'reload') {
+      yield put(reloadReceived(true));
+    } else {
+      yield call(message.error, `Set Transaction Bank Account Fail: ${error}`);
+    }
+  }
+}
+
+function* shareTransactionByEmails(action: PayloadAction<ShareTransactionByEmailAction>) {
+  try {
+    const {
+      transactionId,
+      contents,
+      emails,
+      targetUser,
+      targetGroup,
+    } = action.payload;
+    yield call(
+      shareTransactionByEmail,
+      transactionId,
+      contents,
+      emails,
+      targetUser,
+      targetGroup,
+    );
+    yield call(message.success, 'Email sent');
+  } catch (error) {
+    if (error.message === 'reload') {
+      yield put(reloadReceived(true));
+    } else {
+      yield call(message.error, `Transaction Share By Email Error Received: ${error}`);
+    }
+  }
+}
+
+function* changeAccountBalance(action: PayloadAction<ChangeBankAccountBalanceAction>) {
+  try {
+    const {
+      bankAccount,
+      balance,
+      description,
+      onSuccess
+    } = action.payload;
+    yield call(
+        setAccountBalance,
+        bankAccount.id,
+        balance,
+        description
+    );
+    const state: IState = yield select();
+    const accounts = [] as BankAccount[];
+    state.myself.bankAccounts.forEach(account => {
+      if (account.id === bankAccount.id) {
+        const tmp = {...account};
+        tmp.netBalance = balance;
+        accounts.push(tmp);
+      } else {
+        accounts.push(account);
+      }
+    });
+    yield put(
+        myselfActions.myselfDataReceived({
+          bankAccounts: accounts
+        })
+    );
+    yield call(message.success, `Balance is changed to ${balance} for account '${bankAccount.name}'`);
+    onSuccess();
+  } catch (error) {
+    if (error.message === 'reload') {
+      yield put(reloadReceived(true));
+    } else {
+      yield call(message.error, `changeAccountBalance Error Received: ${error}`);
+    }
+  }
+}
+
+function* getBankAccountTransactions(action: PayloadAction<GetBankAccountTransactionsAction>) {
+  try {
+    const state: IState = yield select();
+    const timezone = state.myself.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const {
+      bankAccountId,
+      startDate,
+      endDate
+    } = action.payload;
+    const data : TransactionView[] = yield call(
+        fetchBankAccountTransactions,
+        bankAccountId,
+        timezone,
+        startDate,
+        endDate
+    );
+    yield put(transactionsActions.bankAccountTransactionsReceived({transactions: data}));
+  } catch (error) {
+    if (error.message === 'reload') {
+      yield put(reloadReceived(true));
+    } else {
+      yield call(message.error, `getBankAccountTransactions Error Received: ${error}`);
+    }
   }
 }
 
@@ -738,8 +901,24 @@ export default function* transactionSagas() {
       getTransactionsByPayer
     ),
     yield takeLatest(
-        transactionsActions.TransactionPatchRevisionContents.type,
-        patchTransactionRevisionContents
+      transactionsActions.updateTransactionColor.type, 
+      updateTransactionColor
     ),
+    yield takeLatest(
+        transactionsActions.updateTransactionBankAccount.type,
+        updateTransactionBankAccount
+    ),
+    yield takeLatest(
+      transactionsActions.TransactionShareByEmail.type, 
+      shareTransactionByEmails),
+    yield takeLatest(
+      transactionsActions.RecurringTransactionsUpdate.type,
+      recurringTransactionsUpdate),
+    yield takeLatest(
+        transactionsActions.ChangeBankAccountBalance.type,
+        changeAccountBalance),
+    yield takeLatest(
+        transactionsActions.GetBankAccountTransactions.type,
+        getBankAccountTransactions),
   ]);
 }

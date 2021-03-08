@@ -1,8 +1,11 @@
 package com.bulletjournal.controller;
 
 import com.bulletjournal.controller.models.*;
+import com.bulletjournal.controller.models.params.CreateContentParams;
+import com.bulletjournal.controller.models.params.CreateNoteParams;
+import com.bulletjournal.controller.models.params.CreateTaskParams;
+import com.bulletjournal.controller.models.params.CreateTransactionParams;
 import com.bulletjournal.controller.utils.TestHelpers;
-import com.bulletjournal.util.DeltaConverter;
 import com.google.common.collect.ImmutableList;
 import org.junit.Before;
 import org.junit.Test;
@@ -57,8 +60,8 @@ public class QueryControllerTest {
     private void addTransactions(Project p) {
         Transaction t1 = createTransaction(p, "for_es_T1", "2020-02-29");
         Transaction t2 = createTransaction(p, "for_es_T2", "2020-03-01");
-        addTransactionContents(t1, DeltaConverter.generateDeltaContent("Buy some food"));
-        addTransactionContents(t2, DeltaConverter.generateDeltaContent("Buy some book"));
+        addTransactionContents(t1, TestHelpers.generateDeltaContent("Buy some food"));
+        addTransactionContents(t2, TestHelpers.generateDeltaContent("Buy some book"));
     }
 
     Content addTransactionContents(Transaction transaction, String text) {
@@ -74,7 +77,7 @@ public class QueryControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         Content content = response.getBody();
         assertEquals(USER, content.getOwner().getName());
-        assertEquals(DeltaConverter.supplementContentText(params.getText()), content.getText());
+        assertEquals(params.getText(), content.getText());
         assertNotNull(content.getId());
         return content;
     }
@@ -82,7 +85,7 @@ public class QueryControllerTest {
     private Transaction createTransaction(Project project, String name, String date) {
         CreateTransactionParams transaction =
                 new CreateTransactionParams(name, USER, 1000.0,
-                        date, null, TIMEZONE, 1);
+                        date, null, TIMEZONE, 1, null);
 
         ResponseEntity<Transaction> response = this.restTemplate.exchange(
                 ROOT_URL + randomServerPort + TransactionController.TRANSACTIONS_ROUTE,
@@ -97,8 +100,8 @@ public class QueryControllerTest {
     private void addNotes(Project p) {
         Note n1 = createNote(p, "for_es_n1", "2020-05-26");
         Note n2 = createNote(p, "for_es_n2", "2020-06-25");
-        addNoteContents(n1, DeltaConverter.generateDeltaContent("don't forget homework"));
-        addNoteContents(n2, DeltaConverter.generateDeltaContent("don't forget to go to class"));
+        addNoteContents(n1, TestHelpers.generateDeltaContent("don't forget homework"));
+        addNoteContents(n2, TestHelpers.generateDeltaContent("don't forget to go to class"));
     }
 
     private Content addNoteContents(Note note, String text) {
@@ -114,7 +117,7 @@ public class QueryControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         Content content = response.getBody();
         assertEquals(USER, content.getOwner().getName());
-        assertEquals(DeltaConverter.supplementContentText(params.getText()), content.getText());
+        assertEquals(params.getText(), content.getText());
         assertNotNull(content.getId());
         return content;
     }
@@ -134,8 +137,8 @@ public class QueryControllerTest {
     private void addTasks(Project p) {
         Task t1 = createTask(p, "hello world", "2020-02-29");
         Task t2 = createTask(p, "love", "2020-03-01");
-        addTaskContents(t1, DeltaConverter.generateDeltaContent("hello world a test hello world work"));
-        addTaskContents(t1, DeltaConverter.generateDeltaContent("I love you don't love me"));
+        addTaskContents(t1, TestHelpers.generateDeltaContent("hello world a test hello world work"));
+        addTaskContents(t1, TestHelpers.generateDeltaContent("I love you don't love me"));
     }
 
     private Task createTask(Project project, String name, String date) {
@@ -171,7 +174,7 @@ public class QueryControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         Content content = response.getBody();
         assertEquals(USER, content.getOwner().getName());
-        assertEquals(DeltaConverter.supplementContentText(params.getText()), content.getText());
+        assertEquals(params.getText(), content.getText());
         assertNotNull(content.getId());
         return content;
     }

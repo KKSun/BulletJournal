@@ -70,17 +70,6 @@ public abstract class TaskModel extends ProjectItemModel<com.bulletjournal.contr
     @Column(name = "assignees", columnDefinition = "text[]")
     private String[] assignees;
 
-    @Column(name = "location", nullable = true)
-    private String location;
-
-    public String getLocation() {
-        return location;
-    }
-
-    public void setLocation(String location) {
-        this.location = location;
-    }
-
     public Timestamp getStartTime() {
         return startTime;
     }
@@ -98,7 +87,7 @@ public abstract class TaskModel extends ProjectItemModel<com.bulletjournal.contr
     }
 
     public boolean hasDueDate() {
-        return this.dueDate != null;
+        return StringUtils.isNotBlank(this.dueDate);
     }
 
     public String getDueDate() {
@@ -327,7 +316,7 @@ public abstract class TaskModel extends ProjectItemModel<com.bulletjournal.contr
             this.getUpdatedAt().getTime(),
             null,
             reminderDateTime,
-            this.location
+            this.getLocation()
         );
 
         task.setShared(this.isShared());
@@ -350,7 +339,7 @@ public abstract class TaskModel extends ProjectItemModel<com.bulletjournal.contr
             ", recurrenceRule='" + recurrenceRule + '\'' +
             ", googleCalendarEventId='" + googleCalendarEventId + '\'' +
             ", assignees=" + Arrays.toString(assignees) +
-            ", location='" + location + '\'' +
+            ", location='" + getLocation() + '\'' +
             '}';
     }
 }

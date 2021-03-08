@@ -1,6 +1,6 @@
-import React from 'react';
-import { AutoComplete, Button, Form, Input, Result, message } from 'antd';
-import { LinkOutlined, CopyOutlined } from '@ant-design/icons';
+import React, {useState} from 'react';
+import { AutoComplete, Button, Form, Input, Result, message, Tooltip } from 'antd';
+import { LinkOutlined, CopyOutlined, EyeOutlined, UserAddOutlined } from '@ant-design/icons';
 import { connect } from 'react-redux';
 import { shareTask } from '../../features/tasks/actions';
 import { shareNote } from '../../features/notes/actions';
@@ -8,10 +8,12 @@ import { ProjectType } from '../../features/project/constants';
 import CopyToClipboard from 'react-copy-to-clipboard';
 import './share-item-modal.styles.less';
 import { IState } from '../../store';
+import {Content} from "../../features/myBuJo/interface";
 
 type ProjectItemProps = {
   type: ProjectType;
   projectItemId: number;
+  content: Content | undefined;
   sharedTaskLink: string;
   sharedNoteLink: string;
   shareTask: (
@@ -31,7 +33,9 @@ type ProjectItemProps = {
 };
 
 const ShareProjectItemGenerateLink: React.FC<ProjectItemProps> = (props) => {
+  const {content, projectItemId} = props;
   const [form] = Form.useForm();
+  const [readOnlyLink, setReadOnlyLink] = useState(true);
 
   const shareProjectItemCall: { [key in ProjectType]: Function } = {
     [ProjectType.NOTE]: props.shareNote,
@@ -51,7 +55,7 @@ const ShareProjectItemGenerateLink: React.FC<ProjectItemProps> = (props) => {
 
   const shareProjectItem = (values: any) => {
     shareFunction(
-      props.projectItemId,
+      projectItemId,
       true,
       undefined,
       undefined,
@@ -63,6 +67,14 @@ const ShareProjectItemGenerateLink: React.FC<ProjectItemProps> = (props) => {
   const options = result.map((time: string) => {
     return { value: time };
   });
+
+  let generatedLink = `${window.location.origin.toString()}/public/items/${sharedLink}`;
+  if (!readOnlyLink) {
+    generatedLink = `${window.location.origin.toString()}/collab/?uid=${sharedLink}`;
+    if (content && content.id) {
+      generatedLink += content.id;
+    }
+  }
 
   return (
     <div>
@@ -78,20 +90,36 @@ const ShareProjectItemGenerateLink: React.FC<ProjectItemProps> = (props) => {
           </AutoComplete>
         </Form.Item>
         <Form.Item>
-          <Button
-            type="primary"
-            htmlType="submit"
-            onClick={() =>
-              form
-                .validateFields()
-                .then((values) => {
-                  shareProjectItem(values);
-                })
-                .catch((info) => console.log(info))
-            }
-          >
-            Generate
-          </Button>
+          <Tooltip title='View only'>
+            <EyeOutlined 
+              style={{color: '#00cae9', fontSize: '20px'}} 
+              onClick={() =>
+                form
+                  .validateFields()
+                  .then((values) => {
+                    setReadOnlyLink(true);
+                    shareProjectItem(values);
+                  })
+                  .catch((info) => console.log(info))
+              }
+            />
+          </Tooltip>
+        </Form.Item>
+        <Form.Item>
+          <Tooltip title='Collaborative editing'>
+            <UserAddOutlined
+              style={{color: '#00cae9', fontSize: '20px'}} 
+              onClick={() =>
+                form
+                  .validateFields()
+                  .then((values) => {
+                    setReadOnlyLink(false);
+                    shareProjectItem(values);
+                  })
+                  .catch((info) => console.log(info))
+              }
+            />
+          </Tooltip>
         </Form.Item>
       </Form>
       <div className="share-info">
@@ -106,10 +134,11 @@ const ShareProjectItemGenerateLink: React.FC<ProjectItemProps> = (props) => {
               }}
             >
               <span
-                style={{ marginRight: '0.5em' }}
-              >{`${window.location.origin.toString()}/public/items/${sharedLink}`}</span>
+                style={{ marginRight: '0.5em', cursor: "pointer", color: "blueviolet", textDecoration: "underline" }}
+                onClick={() => window.open(generatedLink)}
+              >{generatedLink}</span>
               <CopyToClipboard
-                text={`${window.location.origin.toString()}/public/items/${sharedLink}`}
+                text={generatedLink}
                 onCopy={() => message.success('Link Copied to Clipboard')}
               >
                 <Button
@@ -129,6 +158,7 @@ const ShareProjectItemGenerateLink: React.FC<ProjectItemProps> = (props) => {
 const mapStateToProps = (state: IState) => ({
   sharedTaskLink: state.task.sharedLink,
   sharedNoteLink: state.note.sharedLink,
+  content: state.content.content,
 });
 
 export default connect(mapStateToProps, {

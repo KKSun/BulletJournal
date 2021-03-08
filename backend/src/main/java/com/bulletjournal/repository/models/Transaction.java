@@ -1,9 +1,14 @@
 package com.bulletjournal.repository.models;
 
+import com.bulletjournal.clients.UserClient;
 import com.bulletjournal.contents.ContentType;
 import com.bulletjournal.controller.models.Label;
 import com.bulletjournal.controller.models.User;
 import com.bulletjournal.ledger.TransactionType;
+import org.apache.commons.lang3.StringUtils;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
+import org.slf4j.MDC;
 
 import javax.persistence.*;
 import javax.validation.constraints.NotBlank;
@@ -11,6 +16,7 @@ import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
 import java.sql.Timestamp;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -41,8 +47,7 @@ public class Transaction extends ProjectItemModel<com.bulletjournal.controller.m
     @Column(nullable = false)
     private TransactionType transactionType;
 
-    @NotBlank
-    @Column(nullable = false)
+    @Column
     private String date;
 
     @Column
@@ -52,13 +57,25 @@ public class Transaction extends ProjectItemModel<com.bulletjournal.controller.m
     @Column(length = 50, nullable = false)
     private String timezone;
 
-    @NotNull
-    @Column(name = "start_time", nullable = false)
+    @Column(name = "start_time")
     private Timestamp startTime;
 
-    @NotNull
-    @Column(name = "end_time", nullable = false)
+    @Column(name = "end_time")
     private Timestamp endTime;
+
+    @Column
+    private String color;
+
+    @Column(name = "recurrence_rule")
+    private String recurrenceRule;
+
+    @Column(name = "deleted_slots", columnDefinition = "TEXT")
+    private String deletedSlots;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "bank_account")
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private BankAccount bankAccount;
 
     public Long getId() {
         return id;
@@ -100,6 +117,10 @@ public class Transaction extends ProjectItemModel<com.bulletjournal.controller.m
         this.date = date;
     }
 
+    public boolean hasDate() {
+        return StringUtils.isNotBlank(this.date);
+    }
+
     public String getTime() {
         return time;
     }
@@ -132,6 +153,60 @@ public class Transaction extends ProjectItemModel<com.bulletjournal.controller.m
         this.endTime = endTime;
     }
 
+    public String getColor() {
+        return color;
+    }
+
+    public void setColor(String color) {
+        this.color = color;
+    }
+
+    public String getRecurrenceRule() {
+        return recurrenceRule;
+    }
+
+    public void setRecurrenceRule(String recurrenceRule) {
+        this.recurrenceRule = recurrenceRule;
+    }
+
+    public boolean hasRecurrenceRule() {
+        return StringUtils.isNotBlank(this.recurrenceRule);
+    }
+
+    public String getDeletedSlots() {
+        return deletedSlots;
+    }
+
+    public void setDeletedSlots(String deletedSlots) {
+        this.deletedSlots = deletedSlots;
+    }
+
+    public BankAccount getBankAccount() {
+        return bankAccount;
+    }
+
+    public void setBankAccount(BankAccount bankAccount) {
+        this.bankAccount = bankAccount;
+    }
+
+    public boolean hasBankAccount() {
+        return this.bankAccount != null;
+    }
+
+    public double getNetAmount() {
+        double amount = this.getAmount();
+        if (this.getTransactionType() == TransactionType.EXPENSE) {
+            amount = -amount;
+        }
+
+        return amount;
+    }
+
+    @Override
+    public Object clone() throws CloneNotSupportedException {
+        return super.clone();
+    }
+
     @Override
     public com.bulletjournal.controller.models.Transaction toPresentationModel() {
         return this.toPresentationModel(this.getLabels().stream()
@@ -154,7 +229,13 @@ public class Transaction extends ProjectItemModel<com.bulletjournal.controller.m
                 this.getTransactionType().getValue(),
                 this.getCreatedAt().getTime(),
                 this.getUpdatedAt().getTime(),
-                labels);
+                labels,
+                this.getLocation(),
+                this.getColor(),
+                this.getRecurrenceRule(),
+                this.hasBankAccount() && Objects.equals(
+                        this.getBankAccount().getOwner(), MDC.get(UserClient.USER_NAME_KEY)) ?
+                        this.getBankAccount().toPresentationModel() : null);
     }
 
     @Override

@@ -3,24 +3,24 @@ package com.bulletjournal.repository;
 import com.bulletjournal.authz.AuthorizationService;
 import com.bulletjournal.authz.Operation;
 import com.bulletjournal.contents.ContentType;
-import com.bulletjournal.controller.models.AddUserGroupParams;
-import com.bulletjournal.controller.models.RemoveUserGroupParams;
-import com.bulletjournal.controller.models.UpdateGroupParams;
+import com.bulletjournal.controller.models.params.AddUserGroupParams;
+import com.bulletjournal.controller.models.params.RemoveUserGroupParams;
+import com.bulletjournal.controller.models.params.UpdateGroupParams;
 import com.bulletjournal.controller.utils.EtagGenerator;
 import com.bulletjournal.exceptions.BadRequestException;
 import com.bulletjournal.exceptions.ResourceAlreadyExistException;
 import com.bulletjournal.exceptions.ResourceNotFoundException;
 import com.bulletjournal.exceptions.UnAuthorizedException;
+import com.bulletjournal.notifications.Action;
 import com.bulletjournal.notifications.Event;
-import com.bulletjournal.notifications.Informed;
-import com.bulletjournal.notifications.InviteToJoinGroupEvent;
-import com.bulletjournal.notifications.JoinGroupEvent;
+import com.bulletjournal.notifications.informed.*;
 import com.bulletjournal.redis.models.EtagType;
 import com.bulletjournal.repository.factory.Etaggable;
 import com.bulletjournal.repository.models.*;
 import com.bulletjournal.repository.utils.DaoHelper;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -216,7 +216,7 @@ public class GroupDaoJpa implements Etaggable {
         Long groupId = addUserGroupParams.getGroupId();
         Group group = this.groupRepository.findById(groupId)
                 .orElseThrow(() -> new ResourceNotFoundException("Group " + groupId + " not found"));
-        if (!group.getUsers().stream().anyMatch(ug -> Objects.equals(ug.getUser().getName(), requester))) {
+        if (group.getUsers().stream().noneMatch(ug -> Objects.equals(ug.getUser().getName(), requester))) {
             throw new UnAuthorizedException("User " + requester + " not in group " + group.getName());
         }
         String username = addUserGroupParams.getUsername();
@@ -241,6 +241,33 @@ public class GroupDaoJpa implements Etaggable {
                     new Event(group.getOwner(), groupId, group.getName()), requester, username));
         }
         return informeds;
+    }
+
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
+    public Pair<JoinGroupResponseEvent, Group> addUserGroupViaLink(String requester, String uid) {
+        Group group = this.groupRepository.getByUid(uid)
+                .orElseThrow(() -> new ResourceNotFoundException("Group " + uid + " not found"));
+
+        if (group.getUsers().stream().anyMatch(ug -> Objects.equals(ug.getUser().getName(), requester))) {
+            LOGGER.warn(requester + " already in the group");
+            return Pair.of(null, group);
+        }
+
+        User user = this.userDaoJpa.getByName(requester);
+        UserGroupKey key = new UserGroupKey(user.getId(), group.getId());
+        Optional<UserGroup> userGroup = this.userGroupRepository.findById(key);
+        if (!userGroup.isPresent()) {
+            UserGroup ug = new UserGroup(user, group, true);
+            this.userGroupRepository.save(ug);
+            group.getUsers().add(ug);
+            this.groupRepository.save(group);
+        }
+
+        Event event = new Event(
+                group.getOwner(),
+                group.getId(),
+                group.getName());
+        return Pair.of(new JoinGroupResponseEvent(event, requester, Action.ACCEPT), group);
     }
 
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
@@ -319,5 +346,52 @@ public class GroupDaoJpa implements Etaggable {
         return EtagGenerator.generateEtag(EtagGenerator.HashAlgorithm.MD5,
                 EtagGenerator.HashType.TO_HASHCODE,
                 groupList);
+    }
+
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
+    public Informed setGroupShareLink(Long groupId, String requester, String uuid) {
+        Group group = getGroup(groupId);
+        this.authorizationService.validateRequesterInGroup(requester, group, false);
+        group.setUid(uuid);
+        this.groupRepository.save(group);
+
+        List<Event> events = new ArrayList<>();
+        for (UserGroup userGroup : group.getAcceptedUsers()) {
+            String targetUser = userGroup.getUser().getName();
+            if (!Objects.equals(targetUser, requester)) {
+                events.add(new Event(targetUser, userGroup.getGroup().getId(), userGroup.getGroup().getName()));
+            }
+        }
+        return uuid == null ? new DisableGroupShareEvent(events, requester) : new ShareGroupEvent(events, requester);
+    }
+
+    /**
+     * get given group user && given username emails
+     */
+    public Set<String> getEmails(Long groupId, String username) {
+        Set<String> targetEmails = new HashSet<>();
+
+        Set<String> usernames = new HashSet<>();
+        if (username != null) {
+            usernames.add(username);
+        }
+
+        if (groupId != null) {
+            Group group = this.getGroup(groupId);
+            for (UserGroup userGroup : group.getAcceptedUsers()) {
+                usernames.add(userGroup.getUser().getName());
+            }
+        }
+
+        if (!usernames.isEmpty()) {
+            List<User> targetUsers = userDaoJpa.getUsersByNames(usernames);
+            for (User user : targetUsers) {
+                String email = user.getEmail();
+                if (email != null && !email.endsWith("@anon.1o24bbs.com")) {
+                    targetEmails.add(email);
+                }
+            }
+        }
+        return targetEmails;
     }
 }

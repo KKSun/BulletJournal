@@ -18,7 +18,6 @@ import {
   GetTaskStatisticsAction,
   MoveTask,
   PatchContent,
-  PatchRevisionContents,
   PatchTask,
   PutTask,
   RemoveShared,
@@ -32,6 +31,7 @@ import {
   UpdateTaskContentRevision,
   UpdateTaskContents,
   UpdateTasks,
+  ShareTaskByEmailAction,
 } from './reducer';
 import {PayloadAction} from 'redux-starter-kit';
 import {
@@ -53,7 +53,6 @@ import {
   getTaskById,
   getTaskStatistics,
   moveToTargetProject,
-  patchRevisionContents,
   putTasks,
   removeShared,
   revokeSharable,
@@ -63,9 +62,10 @@ import {
   uncompleteTaskById,
   updateContent,
   updateSampleContent,
-  updateTask
+  updateTask,
+  shareTaskByEmail
 } from '../../apis/taskApis';
-import {updateLoadingCompletedTask, updateTaskContents, updateTasks,} from './actions';
+import {updateLoadingCompletedTask, updateTaskContents, updateTasks } from './actions';
 import {getProjectItemsAfterUpdateSelect} from '../myBuJo/actions';
 import {IState} from '../../store';
 import {Content, ProjectItems, Revision} from '../myBuJo/interface';
@@ -202,6 +202,7 @@ function* taskCreate(action: PayloadAction<CreateTask>) {
       reminderSetting,
       recurrenceRule,
       timezone,
+      location,
       labels,
     } = action.payload;
     yield call(
@@ -215,7 +216,8 @@ function* taskCreate(action: PayloadAction<CreateTask>) {
         dueTime,
         duration,
         recurrenceRule,
-        labels
+        labels,
+        location,
     );
     yield put(updateTasks(projectId));
     const state: IState = yield select();
@@ -334,6 +336,7 @@ function* patchTask(action: PayloadAction<PatchTask>) {
       duration,
       timezone,
       reminderSetting,
+      location,
       recurrenceRule,
       labels,
     } = action.payload;
@@ -348,6 +351,7 @@ function* patchTask(action: PayloadAction<PatchTask>) {
         duration,
         timezone,
         reminderSetting,
+        location,
         recurrenceRule,
         labels
     );
@@ -1280,38 +1284,6 @@ function* getSearchCompletedTasks(
   }
 }
 
-function* patchTaskRevisionContents(action: PayloadAction<PatchRevisionContents>) {
-  try {
-    const {taskId, contentId, revisionContents, etag} = action.payload;
-    const data : Content = yield call(patchRevisionContents, taskId, contentId, revisionContents, etag);
-    const state: IState = yield select();
-    console.log("data", data);
-    if (data && state.content.content && data.id === state.content.content.id) {
-      console.log("updateTargetContent");
-      yield put(updateTargetContent(data));
-    }
-
-    if (data && data.id) {
-      const contents : Content[] = [];
-      state.task.contents.forEach(c => {
-        if (c.id === data.id) {
-          contents.push(data);
-        } else {
-          contents.push(c);
-        }
-      });
-      console.log("update contents", contents);
-      yield put(
-          tasksActions.taskContentsReceived({
-            contents: contents,
-          })
-      );
-    }
-  } catch (error) {
-    yield put(reloadReceived(true));
-  }
-}
-
 function* fetchTaskStatistics(action: PayloadAction<GetTaskStatisticsAction>) {
   try {
     const {projectIds, timezone, startDate, endDate} = action.payload;
@@ -1326,6 +1298,33 @@ function* fetchTaskStatistics(action: PayloadAction<GetTaskStatisticsAction>) {
       yield put(reloadReceived(true));
     } else {
       yield call(message.error, `fetchTaskStatistics Error Received: ${error}`);
+    }
+  }
+}
+
+function* shareTaskByEmails(action: PayloadAction<ShareTaskByEmailAction>) {
+  try {
+    const {
+      taskId,
+      contents,
+      emails,
+      targetUser,
+      targetGroup,
+    } = action.payload;
+    yield call(
+      shareTaskByEmail,
+      taskId,
+      contents,
+      emails,
+      targetUser,
+      targetGroup,
+    );
+    yield call(message.success, 'Email sent');
+  } catch (error) {
+    if (error.message === 'reload') {
+      yield put(reloadReceived(true));
+    } else {
+      yield call(message.error, `Task Share By Email Error Received: ${error}`);
     }
   }
 }
@@ -1382,7 +1381,7 @@ export default function* taskSagas() {
     yield takeLatest(tasksActions.TasksDelete.type, deleteTasks),
     yield takeLatest(tasksActions.TasksComplete.type, completeTasks),
     yield takeLatest(tasksActions.TaskStatusSet.type, setTaskStatus),
-    yield takeLatest(tasksActions.TaskPatchRevisionContents.type, patchTaskRevisionContents),
     yield takeLatest(tasksActions.GetTaskStatistics.type, fetchTaskStatistics),
+    yield takeLatest(tasksActions.TaskShareByEmail.type, shareTaskByEmails),
   ]);
 }

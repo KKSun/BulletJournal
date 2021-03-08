@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, {useEffect, useState} from 'react';
 import {
   Avatar,
   Button,
   DatePicker,
+  Empty,
   Form,
   Input,
   InputNumber,
@@ -12,27 +13,37 @@ import {
   TimePicker,
   Tooltip,
 } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
-import { connect } from 'react-redux';
-import { RouteComponentProps, withRouter, useParams } from 'react-router';
+import {PlusOutlined, SyncOutlined, EnvironmentOutlined, BankOutlined} from '@ant-design/icons';
+import {connect} from 'react-redux';
+import {RouteComponentProps, useParams, withRouter} from 'react-router';
 import {
   createTransaction,
+  updateRecurringTransactions,
   updateTransactionVisible,
 } from '../../features/transactions/actions';
-import { IState } from '../../store';
-import { Project } from '../../features/project/interface';
-import { Group } from '../../features/group/interface';
+import ReactRRuleGenerator from '../../features/recurrence/RRuleGenerator';
+import {convertToTextWithRRule,} from '../../features/recurrence/actions';
+import {IState} from '../../store';
+import {Project} from '../../features/project/interface';
+import {Group} from '../../features/group/interface';
 import './modals.styles.less';
-import { updateExpandedMyself } from '../../features/myself/actions';
-import { zones } from '../settings/constants';
-import { dateFormat } from '../../features/myBuJo/constants';
-import { getIcon } from '../draggable-labels/draggable-label-list.component';
-import { labelsUpdate } from '../../features/label/actions';
-import { Label } from '../../features/label/interface';
+import {updateExpandedMyself} from '../../features/myself/actions';
+import {zones} from '../settings/constants';
+import {dateFormat} from '../../features/myBuJo/constants';
+import {getIcon} from '../draggable-labels/draggable-label-list.component';
+import {labelsUpdate} from '../../features/label/actions';
+import {Label} from '../../features/label/interface';
 import {onFilterLabel} from "../../utils/Util";
 import {Button as FloatButton, Container, darkColors, lightColors} from "react-floating-action-button";
 import {useHistory} from "react-router-dom";
 import {PlusCircleTwoTone} from "@ant-design/icons/lib";
+import ProjectSettingDialog from "../../components/modals/project-setting.component";
+import {BankAccount, Transaction} from "../../features/transactions/interface";
+import {ProjectItemUIType} from "../../features/project/constants";
+import TransactionItem from "../project-item/transaction-item.component";
+import SearchBar from '../map-search-bar/search-bar.component';
+import BankAccountElem from "../settings/bank-account";
+
 
 const { Option } = Select;
 const currentZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -56,6 +67,9 @@ const LocaleCurrency = require('locale-currency'); //currency code
 type TransactionProps = {
   project: Project | undefined;
   group: Group | undefined;
+  myself: string;
+  recurringTransactions: Transaction[];
+  updateRecurringTransactions: (projectId: number) => void;
 };
 
 interface TransactionCreateFormProps {
@@ -65,20 +79,26 @@ interface TransactionCreateFormProps {
     amount: number,
     name: string,
     payer: string,
-    date: string,
     transactionType: number,
     timezone: string,
+    location: string,
     labels: number[],
-    time: string
+    date?: string,
+    time?: string,
+    recurrenceRule?: string,
+    bankAccountId?: number,
+    onSuccess?: Function
   ) => void;
   updateExpandedMyself: (updateSettings: boolean) => void;
   currency: string;
   timezone: string;
   myself: string;
+  bankAccounts: BankAccount[];
   updateTransactionVisible: (visible: boolean) => void;
   addTransactionVisible: boolean;
   labelsUpdate: (projectId: number | undefined) => void;
   labelOptions: Label[];
+  rRuleString: any;
 }
 
 const AddTransaction: React.FC<
@@ -86,34 +106,54 @@ const AddTransaction: React.FC<
 > = (props) => {
   const [form] = Form.useForm();
   const history = useHistory();
-  const [timeVisible, setTimeVisible] = useState(false);
+  const [manageRecurringTransDialogVisible, setManageRecurringTransDialogVisible] = useState(false);
   const { projectId } = useParams();
+  const [recurrent, setRecurrent] = useState(false);
+  const [bankAccountVisible, setBankAccountVisible] = useState(true);
+  const [location, setLocation] = useState('');
 
   const addTransaction = (values: any) => {
     //convert time object to format string
-    const date_value = values.date.format(dateFormat);
-    const time_value = values.time ? values.time.format('HH:mm') : undefined;
+    const dateValue = values.date ? values.date.format(dateFormat) : undefined;
+    const timeValue = values.time ? values.time.format('HH:mm') : undefined;
     const payerName = values.payerName ? values.payerName : props.myself;
     const timezone = values.timezone ? values.timezone : props.timezone;
+    const recurrence = recurrent ? props.rRuleString : undefined;
+
     if (props.project) {
       props.createTransaction(
         props.project.id,
         values.amount,
         values.transactionName,
         payerName,
-        date_value,
         values.transactionType,
         timezone,
+        location,
         values.labels,
-        time_value
+        dateValue,
+        timeValue,
+        recurrence,
+        values.bankAccountId,
+        () => {
+          if (recurrence) {
+            openManageRecurringTransDialog();
+          }
+        }
       );
     }
     props.updateTransactionVisible(false);
   };
-  const onCancel = () => props.updateTransactionVisible(false);
-  const openModal = () => {
+  const onCancelNewDialogModal = () => props.updateTransactionVisible(false);
+  const openNewTranDialogModal = () => {
     props.updateTransactionVisible(true);
   };
+
+  const openManageRecurringTransDialog = () => {
+    if (props.project) {
+      props.updateRecurringTransactions(props.project.id);
+    }
+    setManageRecurringTransDialogVisible(true);
+  }
 
   useEffect(() => {
     props.updateExpandedMyself(true);
@@ -125,12 +165,28 @@ const AddTransaction: React.FC<
     }
   }, []);
 
+  const [rRuleText, setRRuleText] = useState(
+    convertToTextWithRRule(props.rRuleString)
+  );
+  useEffect(() => {
+    setRRuleText(convertToTextWithRRule(props.rRuleString));
+  }, [props.rRuleString]);
+
+  const getLocationItem = () => {
+	return <Form.Item label={<div><EnvironmentOutlined/><span style={{padding: '0 4px'}}>Location</span></div>}>
+	  <SearchBar setLocation={setLocation} location={location}/>
+	</Form.Item>;
+  }
+
   const getSelections = () => {
     if (!props.group || !props.group.users) {
       return null;
     }
     return (
-      <Select defaultValue={props.myself} style={{ marginLeft: '-8px' }}>
+      <Select defaultValue={props.myself} style={{ marginLeft: '-8px' }} onChange={() => {
+        setBankAccountVisible(form.getFieldValue('payerName') === props.myself);
+        form.setFields([{ name: 'bankAccountId', value: undefined }]);
+      }}>
         {props.group.users
           .filter((u) => u.accepted)
           .map((user) => {
@@ -145,7 +201,37 @@ const AddTransaction: React.FC<
     );
   };
 
-  const getModal = () => {
+  const getRecurringTransactionsDiv = () => {
+    if (props.recurringTransactions.length === 0) {
+      return <Empty/>
+    }
+
+    return <div>
+      {props.recurringTransactions.map((t: Transaction) => <TransactionItem
+              transaction={t}
+              type={ProjectItemUIType.MANAGE_RECURRING}
+              inModal={true}
+              inProject={false}
+          />
+      )}
+    </div>
+  }
+
+  const getManageRecurringTransactionsModal = () => {
+    return (
+        <Modal
+            destroyOnClose
+            centered
+            title='Manage Recurring Transactions'
+            visible={manageRecurringTransDialogVisible}
+            footer={null}
+            onCancel={() => setManageRecurringTransDialogVisible(false)}>
+          {getRecurringTransactionsDiv()}
+        </Modal>
+    )
+  };
+
+  const getNewTransactionModal = () => {
     return (
       <Modal
         destroyOnClose
@@ -153,7 +239,7 @@ const AddTransaction: React.FC<
         title='Create New Transaction'
         visible={props.addTransactionVisible}
         okText='Create'
-        onCancel={onCancel}
+        onCancel={onCancelNewDialogModal}
         onOk={() => {
           form
             .validateFields()
@@ -193,10 +279,7 @@ const AddTransaction: React.FC<
               rules={[{ required: true, message: 'Missing Amount!' }]}
             >
               <InputNumber
-                style={{ width: 160 }}
-                formatter={(value) =>
-                  `${LocaleCurrency.getCurrency(props.currency)} ${value}`
-                }
+                style={{ width: 150 }}
                 parser={(value) => {
                   return value ? value.replace(/^[A-Za-z]+\s?/g, '') : 0;
                 }}
@@ -205,7 +288,7 @@ const AddTransaction: React.FC<
 
             <Form.Item
               name='transactionType'
-              style={{ marginLeft: 15 }}
+              style={{ marginLeft: 25 }}
               colon={false}
               rules={[{ required: true, message: 'Missing Type!' }]}
             >
@@ -216,33 +299,62 @@ const AddTransaction: React.FC<
             </Form.Item>
           </div>
 
+          {/* transaction type------------------------------------- */}
+          <span style={{ color: 'rgba(0, 0, 0, 0.85)' }}>Transaction Type &nbsp;&nbsp;</span>
+          <Radio.Group
+            defaultValue={recurrent ? 'Recurrent' : 'oneTime'}
+            onChange={(e) => setRecurrent(e.target.value === 'Recurrent')}
+            buttonStyle="solid"
+            style={{ marginBottom: 18 }}
+          >
+            <Radio.Button value={'oneTime'}>One Time</Radio.Button>
+            <Radio.Button value={'Recurrent'}>Recurring</Radio.Button>
+          </Radio.Group>
+
+          {recurrent ? (
+            <div
+              style={{
+                borderTop: '1px solid #E8E8E8',
+                borderBottom: '1px solid #E8E8E8',
+                paddingTop: '24px',
+                marginBottom: '24px',
+              }}
+            >
+              <div className="recurrence-title">{rRuleText}</div>
+              <ReactRRuleGenerator />
+            </div>
+          ):
+          (
+            <div style={{ display: 'flex' }}>
+              <div style={{ display: 'flex', flex: 1 }}>
+                <Tooltip title="Select Date" placement="left">
+                  <Form.Item 
+                    name="date" 
+                    style={{ width: '100%' }}
+                    rules={[{ required: true, message: 'Missing Date!' }]}>
+                    <DatePicker
+                      allowClear={true}
+                      style={{ width: '100%' }}
+                      placeholder="Date"
+                    />
+                  </Form.Item>
+                </Tooltip>
+                <Tooltip title="Select Time" placement="right">
+                  <Form.Item name="time" style={{width: '210px'}}>
+                    <TimePicker
+                        allowClear={true}
+                        format="HH:mm"
+                        placeholder="Time"
+                    />
+                  </Form.Item>
+                </Tooltip>
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex' }}>
-            <Tooltip title='Select Date' placement='left'>
-              <Form.Item
-                name='date'
-                rules={[{ required: true, message: 'Missing Date!' }]}
-              >
-                <DatePicker
-                  placeholder='Select Date'
-                  onChange={(value) => setTimeVisible(value !== null)}
-                />
-              </Form.Item>
-            </Tooltip>
-
-            {timeVisible && (
-              <Tooltip title='Select Time' placement='right'>
-                <Form.Item name='time' style={{ width: '100px' }}>
-                  <TimePicker
-                    allowClear
-                    format='HH:mm'
-                    placeholder='Select Time'
-                  />
-                </Form.Item>
-              </Tooltip>
-            )}
-
             <Tooltip title='Time Zone'>
-              <Form.Item name='timezone'>
+              <Form.Item name='timezone' label="Time Zone">
                 <Select
                   showSearch={true}
                   placeholder='Select Time Zone'
@@ -259,6 +371,9 @@ const AddTransaction: React.FC<
               </Form.Item>
             </Tooltip>
           </div>
+          {location && location.length > 40 ? <Tooltip title={location} placement="bottom">
+            {getLocationItem()}
+          </Tooltip> : getLocationItem()}
           {/* label */}
           <div>
             <Form.Item name="labels" label={
@@ -283,6 +398,24 @@ const AddTransaction: React.FC<
               </Select>
             </Form.Item>
           </div>
+          {/* Bank Account */}
+          {bankAccountVisible && <div>
+            <Form.Item name="bankAccountId" label={
+              <Tooltip title="Click to go to bank page to create bank account">
+                <span style={{cursor: 'pointer'}} onClick={() => history.push('/bank')}>
+                  Bank Accounts&nbsp;<PlusCircleTwoTone />
+                </span>
+              </Tooltip>
+            }>
+              <Select allowClear={true}>
+                {props.bankAccounts.map((account) => {
+                  return <Option value={account.id} key={account.id}>
+                    <BankAccountElem bankAccount={account} mode='dropdown'/>
+                  </Option>
+                })}
+              </Select>
+            </Form.Item>
+          </div>}
         </Form>
       </Modal>
     );
@@ -291,25 +424,42 @@ const AddTransaction: React.FC<
   if (props.mode === 'button') {
     return (
       <div className='add-transaction'>
-        <Button type='primary' onClick={openModal}>
+        <Button type='primary' onClick={openNewTranDialogModal}>
           Create New Transaction
         </Button>
-        {getModal()}
       </div>
     );
   }
 
   return (
+    <div>
       <Container>
         <FloatButton
+            tooltip="Bank Account"
+            onClick={() => history.push('/bank')}
+            styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
+        >
+          <BankOutlined />
+        </FloatButton>
+        <FloatButton
+            tooltip="Manage Recurring Transactions"
+            onClick={openManageRecurringTransDialog}
+            styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
+        >
+          <SyncOutlined spin />
+        </FloatButton>
+        {getManageRecurringTransactionsModal()}
+        {props.project && props.project.owner.name === props.myself && <ProjectSettingDialog />}
+        <FloatButton
             tooltip="Add New Transaction"
-            onClick={openModal}
-            styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+            onClick={openNewTranDialogModal}
+            styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
         >
           <PlusOutlined/>
         </FloatButton>
-        {getModal()}
+        {getNewTransactionModal()}
       </Container>
+    </div>
   );
 };
 
@@ -321,6 +471,9 @@ const mapStateToProps = (state: IState) => ({
   myself: state.myself.username,
   addTransactionVisible: state.transaction.addTransactionVisible,
   labelOptions: state.label.labelOptions,
+  recurringTransactions: state.transaction.recurringTransactions,
+  rRuleString: state.rRule.rRuleString,
+  bankAccounts: state.myself.bankAccounts,
 });
 
 export default connect(mapStateToProps, {
@@ -328,4 +481,5 @@ export default connect(mapStateToProps, {
   updateExpandedMyself,
   updateTransactionVisible,
   labelsUpdate,
+  updateRecurringTransactions
 })(withRouter(AddTransaction));

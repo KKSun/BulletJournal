@@ -12,6 +12,7 @@ import TemplatesPage from './template';
 import TokenPage from "./Token";
 import PublicNotificationsPage from "./public-notifications";
 import PublicSampleTaskPage from "./public-sample-task.pages";
+import JoinGroupViaLinkPage from "./join-group-via-link";
 
 const store = createStore();
 
@@ -41,13 +42,15 @@ export const inPublicPage = () => {
 
 const isMobilePage = () => {
     const userAgent = window.navigator.userAgent.toLowerCase();
-    return userAgent.includes('mobile') && !inPublicPage() && !window.location.href.toLowerCase().includes('/tokens');
+    return userAgent.includes('mobile') && !userAgent.includes('ipad')
+        && !inPublicPage() && !userAgent.includes('/tokens');
 };
 
 function listen() {
     if (document.readyState === 'complete') {
+        const userAgent = window.navigator.userAgent.toLowerCase();
         if (process.env.NODE_ENV === 'production' &&
-            !inPublicPage() && !window.navigator.userAgent.toLowerCase().includes('mobile')) {
+            !inPublicPage() && (!userAgent.includes('mobile') || userAgent.includes('ipad'))) {
             const loginCookie = getCookie('__discourse_proxy');
             if (!loginCookie) {
                 if (caches) {
@@ -72,6 +75,7 @@ function listen() {
                             <Route exact path="/public/notifications/:id" component={PublicNotificationsPage}/>
                             <Route exact path="/public/sampleTasks/:taskId" component={PublicSampleTaskPage}/>
                             <Route exact path="/tokens/:token" component={TokenPage}/>
+                            <Route path="/public/groups/:groupUid" component={JoinGroupViaLinkPage}/>
                             <Route path="/public/templates">
                                 <HashRouter>
                                     <Route path="/" component={TemplatesPage}/>

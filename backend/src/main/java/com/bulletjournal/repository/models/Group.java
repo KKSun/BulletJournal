@@ -15,8 +15,7 @@ import java.util.stream.Collectors;
 public class Group extends OwnedModel {
 
     public static final String DEFAULT_NAME = "Default";
-    @OneToMany(mappedBy = "group", fetch = FetchType.LAZY)
-    Set<UserGroup> users = new HashSet<>();
+
     @Id
     @GeneratedValue(generator = "group_generator")
     @SequenceGenerator(
@@ -25,10 +24,18 @@ public class Group extends OwnedModel {
             initialValue = 100
     )
     private Long id;
+
+    @OneToMany(mappedBy = "group", fetch = FetchType.LAZY)
+    Set<UserGroup> users = new HashSet<>();
+
     @Column(name = "default_group", nullable = false, updatable = false)
     private boolean defaultGroup = false;
+
     @OneToMany(mappedBy = "group", fetch = FetchType.LAZY)
     private List<Project> projects = new ArrayList<>();
+
+    @Column
+    private String uid;
 
     public Long getId() {
         return id;
@@ -69,7 +76,6 @@ public class Group extends OwnedModel {
         }
     }
 
-
     public boolean isDefaultGroup() {
         return defaultGroup;
     }
@@ -78,14 +84,25 @@ public class Group extends OwnedModel {
         this.defaultGroup = defaultGroup;
     }
 
+    public String getUid() {
+        return uid;
+    }
+
+    public void setUid(String uid) {
+        this.uid = uid;
+    }
+
     public com.bulletjournal.controller.models.Group toPresentationModel() {
         return new com.bulletjournal.controller.models.Group(
-                this.getId(), this.getName(), new com.bulletjournal.controller.models.User(this.getOwner()));
+                this.getId(), this.getName(),
+                new com.bulletjournal.controller.models.User(this.getOwner()),
+                this.getUid());
     }
 
     public com.bulletjournal.controller.models.Group toVerbosePresentationModel() {
         com.bulletjournal.controller.models.Group group = new com.bulletjournal.controller.models.Group(
-                this.getId(), this.getName(), new com.bulletjournal.controller.models.User(this.getOwner()));
+                this.getId(), this.getName(),
+                new com.bulletjournal.controller.models.User(this.getOwner()), this.getUid());
         group.setUsers(this.getUsers()
                 .stream()
                 .map(ug -> new com.bulletjournal.controller.models.UserGroup(ug.getUser().getName(), ug.isAccepted()))

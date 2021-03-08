@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {AutoComplete, Avatar, DatePicker, Form, Input, Modal, Radio, Select, TimePicker, Tooltip,} from 'antd';
-import {CheckSquareTwoTone, CloseSquareTwoTone, EditTwoTone,} from '@ant-design/icons';
+import {CheckSquareTwoTone, CloseSquareTwoTone, EditTwoTone, EnvironmentOutlined} from '@ant-design/icons';
 import {connect} from 'react-redux';
 import {RouteComponentProps, useParams, withRouter} from 'react-router';
 import {patchTask} from '../../features/tasks/actions';
@@ -12,7 +12,7 @@ import {updateExpandedMyself} from '../../features/myself/actions';
 import ReactRRuleGenerator from '../../features/recurrence/RRuleGenerator';
 import {ReminderBeforeTaskText} from '../settings/reducer';
 import {labelsUpdate} from '../../features/label/actions';
-import {convertToTextWithRRule, updateRruleString,} from '../../features/recurrence/actions';
+import {convertToTextWithRRule, updateRruleString} from '../../features/recurrence/actions';
 import {ReminderSetting, Task} from '../../features/tasks/interface';
 import {dateFormat} from '../../features/myBuJo/constants';
 import moment from 'moment';
@@ -23,6 +23,7 @@ import {onFilterAssignees, onFilterLabel} from '../../utils/Util';
 import {ProjectItemUIType} from "../../features/project/constants";
 import {useHistory} from "react-router-dom";
 import {PlusCircleTwoTone} from "@ant-design/icons/lib";
+import SearchBar from '../map-search-bar/search-bar.component';
 
 const { Option } = Select;
 const currentZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -60,6 +61,7 @@ interface TaskEditFormProps {
     dueTime?: string,
     duration?: number,
     reminderSetting?: ReminderSetting,
+    location?: string,
     recurrenceRule?: string,
     labels?: number[]
   ) => void;
@@ -106,6 +108,14 @@ const EditTask: React.FC<
   const [rRuleText, setRRuleText] = useState(
     convertToTextWithRRule(props.rRuleString)
   );
+
+  const [location, setLocation] = useState(task.location || '');
+
+  const getLocationItem =() => {
+	return <Form.Item label={<div><EnvironmentOutlined/><span style={{padding: '0 4px'}}>Location</span></div>}>
+	  <SearchBar setLocation={setLocation} location={location}/>
+	</Form.Item>;
+  }
 
   useEffect(() => {
     setRRuleText(convertToTextWithRRule(props.rRuleString));
@@ -198,6 +208,7 @@ const EditTask: React.FC<
       dueTime,
       duration,
       reminderSetting,
+      location,
       recurrence,
       values.labels
     );
@@ -372,7 +383,7 @@ const EditTask: React.FC<
                 //force remind option to be before
                 setRemindButton('remindBefore');
                 setReminderType('remindBefore');
-              }}>Recurrence</span>
+              }}>Recurring</span>
             </Radio>
           </Radio.Group>
 
@@ -559,6 +570,9 @@ const EditTask: React.FC<
               )}
             </div>
           </div>
+          {location && location.length > 40 ? <Tooltip title={location} placement="bottom">
+            {getLocationItem()}
+          </Tooltip> : getLocationItem()}
           {/* label */}
           <div>
             <Form.Item name="labels" label={

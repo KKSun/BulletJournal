@@ -1,4 +1,5 @@
 import { actions } from './reducer';
+import {BankAccountType} from "../transactions/interface";
 
 export const updateMyself = () => actions.myselfUpdate({});
 
@@ -55,4 +56,36 @@ export const deleteMySampleTasks = (sampleTasks: number[],
                                     startDate?: string, timezone?: string) => actions.deleteMySampleTasks({
     sampleTasks: sampleTasks, projectId: projectId, assignees: assignees, reminderBefore: reminderBefore,
     labels: labels, startDate: startDate, timezone: timezone
+});
+
+export const getBankAccounts = () => actions.getMyBankAccounts({});
+
+export const addBankAccount = (name: string,
+                               accountType: BankAccountType,
+                               onSuccess: (bankAccountId: number) => void,
+                               accountNumber?: string,
+                               description?: string) => actions.addMyBankAccount({
+    name: name,
+    accountType: accountType,
+    onSuccess: onSuccess,
+    accountNumber: accountNumber,
+    description: description
+});
+
+export const deleteBankAccount = (id: number) => actions.deleteMyBankAccount({
+  bankAccountId: id
+});
+
+export const updateBankAccount = (
+  id: number,
+  name: string,
+  accountType: BankAccountType,
+  accountNumber?: string,
+  description?: string
+) => actions.updateMyBankAccount({
+  id: id,
+  name: name,
+  accountType: accountType,
+  accountNumber: accountNumber,
+  description: description
 });

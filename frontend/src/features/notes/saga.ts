@@ -15,7 +15,6 @@ import {
   NoteApiErrorAction,
   PatchContent,
   PatchNote,
-  PatchRevisionContents,
   PutNote,
   RemoveShared,
   RevokeSharable,
@@ -24,6 +23,8 @@ import {
   UpdateNoteContentRevision,
   UpdateNoteContents,
   UpdateNotes,
+  UpdateNoteColorAction,
+  ShareNoteByEmailAction
 } from './reducer';
 import {PayloadAction} from 'redux-starter-kit';
 import {
@@ -38,14 +39,15 @@ import {
   getNoteById,
   getSharables,
   moveToTargetProject,
-  patchRevisionContents,
   putNotes,
   removeShared,
   revokeSharable,
   setNoteLabels,
   shareNoteWithOther,
   updateContent,
-  updateNote
+  updateNote,
+  putNoteColor,
+  shareNoteByEmail,
 } from '../../apis/noteApis';
 import {IState} from '../../store';
 import {updateNoteContents, updateNotes} from './actions';
@@ -231,8 +233,8 @@ function* getNotesByOrder(action: PayloadAction<GetNotesByOrder>) {
 
 function* noteCreate(action: PayloadAction<CreateNote>) {
   try {
-    const { projectId, name, labels } = action.payload;
-    yield call(createNote, projectId, name, labels);
+    const { projectId, name, location, labels } = action.payload;
+    yield call(createNote, projectId, name, location, labels);
     yield put(updateNotes(projectId));
     const state: IState = yield select();
     if (state.project.project) {
@@ -303,8 +305,8 @@ function* getNote(action: PayloadAction<GetNote>) {
 
 function* patchNote(action: PayloadAction<PatchNote>) {
   try {
-    const { noteId, name, labels } = action.payload;
-    const data = yield call(updateNote, noteId, name, labels);
+    const { noteId, name, location, labels } = action.payload;
+    const data = yield call(updateNote, noteId, name, location, labels);
     yield put(
       notesActions.notesReceived({
         notes: data,
@@ -633,32 +635,51 @@ function* removeSharedNote(action: PayloadAction<RemoveShared>) {
   }
 }
 
-function* patchNoteRevisionContents(action: PayloadAction<PatchRevisionContents>) {
+function* updateNoteColor(
+  action: PayloadAction<UpdateNoteColorAction>
+) {
   try {
-    const {noteId, contentId, revisionContents, etag} = action.payload;
-    const data : Content = yield call(patchRevisionContents, noteId, contentId, revisionContents, etag);
-    const state: IState = yield select();
-    if (data && state.content.content && data.id === state.content.content.id) {
-      yield put(updateTargetContent(data));
-    }
+    const {noteId, color} = action.payload;
+    const data : Note = yield call(
+      putNoteColor,
+      noteId,
+      color,
+    );
 
-    if (data && data.id) {
-      const contents : Content[] = [];
-      state.task.contents.forEach(c => {
-        if (c.id === data.id) {
-          contents.push(data);
-        } else {
-          contents.push(c);
-        }
-      });
-      yield put(
-          notesActions.noteContentsReceived({
-            contents: contents,
-          })
-      );
-    }
+    yield put(notesActions.noteReceived({note: data}));
   } catch (error) {
-    yield put(reloadReceived(true));
+    if (error.message === 'reload') {
+      yield put(reloadReceived(true));
+    } else {
+      yield call(message.error, `Set Note Color Fail: ${error}`);
+    }
+  }
+}
+
+function* shareNoteByEmails(action: PayloadAction<ShareNoteByEmailAction>) {
+  try {
+    const {
+      noteId,
+      contents,
+      emails,
+      targetUser,
+      targetGroup,
+    } = action.payload;
+    yield call(
+      shareNoteByEmail,
+      noteId,
+      contents,
+      emails,
+      targetUser,
+      targetGroup,
+    );
+    yield call(message.success, 'Email sent');
+  } catch (error) {
+    if (error.message === 'reload') {
+      yield put(reloadReceived(true));
+    } else {
+      yield call(message.error, `Note Share By Email Error Received: ${error}`);
+    }
   }
 }
 
@@ -691,6 +712,7 @@ export default function* noteSagas() {
     yield takeLatest(notesActions.getNotesByOwner.type, getNotesByOwner),
     yield takeLatest(notesActions.getNotesByOrder.type, getNotesByOrder),
     yield takeLatest(notesActions.NotesDelete.type, notesDelete),
-    yield takeLatest(notesActions.NotePatchRevisionContents.type, patchNoteRevisionContents),
+    yield takeLatest(notesActions.updateNoteColor.type, updateNoteColor),
+    yield takeLatest(notesActions.NoteShareByEmail.type, shareNoteByEmails),
   ]);
 }

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -41,6 +42,8 @@ const systemUpdateRoute = "/api/system/updates"
 const tokenForCookieUrl = "/api/tokens/"
 const guestUsername = "Guest"
 const ssoLoginUrlPrefix = "/sso_login"
+const ssoLoginSuffix = "?ssoLogin=true"
+const homePageUrl = "https://bulletjournal.us/home/index.html"
 var guestToken = ""
 
 func main() {
@@ -51,6 +54,8 @@ func main() {
 			usage(err)
 		}
 	}
+
+	rand.Seed(time.Now().UnixNano())
 
 	dnssrv := httpproxy.NewDNSSRVBackend(config.OriginURL)
 	go dnssrv.Lookup(context.Background(), 50*time.Second, 10*time.Second, config.SRVAbandonAfter)
@@ -93,9 +98,9 @@ func main() {
 		Addr: ":80",
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			logger.Printf("Port 80: Request %s %s", r.Host, r.URL)
-			if r.Host == "home.bulletjournal.us" {
-				logger.Printf("Port 80: Bypassing Auth Proxy: %s", r.RequestURI)
-				proxy.ServeHTTP(w, r)
+			if r.Host == "www.bulletjournal.us" {
+				logger.Printf("Redirecting www.bulletjournal.us: %s", r.RequestURI)
+				http.Redirect(w, r, "https://bulletjournal.us"+r.RequestURI, http.StatusMovedPermanently)
 				return
 			}
 			http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
@@ -106,13 +111,24 @@ func main() {
 
 func authProxyHandler(handler http.Handler, config *Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger.Printf("Port 443: Request %s %s", r.Host, r.URL)
 		if !strings.HasPrefix(r.URL.Path, systemUpdateRoute) {
 			logger.Printf("Request %s %s", r.Host, r.URL)
 		}
 
+		if strings.HasPrefix(r.URL.Path, "/ads.txt") {
+			fmt.Fprintf(w, "google.com, pub-8783793954376932, DIRECT, f08c47fec0942fa0")
+			return
+		}
+
 		if r.Host == "home.bulletjournal.us" {
-			logger.Printf("Port 443: Redirect to 80: %s", r.RequestURI)
-			http.Redirect(w, r, "http://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
+			logger.Printf("Port 443: Bypassing Auth Proxy: %s", r.RequestURI)
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if r.Host == "www.bulletjournal.us" {
+			logger.Printf("Redirecting www.bulletjournal.us: %s", r.RequestURI)
+			http.Redirect(w, r, "https://bulletjournal.us"+r.RequestURI, http.StatusMovedPermanently)
 			return
 		}
 		if checkWhitelist(handler, r, w) {
@@ -308,6 +324,7 @@ func getApiToken(r *http.Request) (returnCookie string) {
 }
 
 func redirectToSSO(r *http.Request, w http.ResponseWriter) {
+	// you reach here when there is no auth cookie
 	redirectURL := r.URL.String()
 	if strings.HasPrefix(redirectURL, "/api") {
 		w.Header().Set("reload", "true")
@@ -320,11 +337,26 @@ func redirectToSSO(r *http.Request, w http.ResponseWriter) {
 	if strings.HasSuffix(redirectURL, "?ignoreCookie=true") {
 		redirectURL = redirectURL[:(len(redirectURL) - 18)]
 		logger.Printf("redirectURL changed to %s", redirectURL)
+		toSSOProvider(r, w, redirectURL)
+		return
 	}
+	if rand.Float64() < 0.5 && !strings.HasSuffix(redirectURL, ssoLoginSuffix) {
+		http.Redirect(w, r, homePageUrl, http.StatusMovedPermanently)
+		return
+	}
+
+	if strings.HasSuffix(redirectURL, ssoLoginSuffix) {
+		redirectURL = redirectURL[:(len(redirectURL) - 14)]
+	}
+	logger.Printf("redirectURL changed to %s", redirectURL)
+	toSSOProvider(r, w, redirectURL)
+}
+
+func toSSOProvider(r *http.Request, w http.ResponseWriter, redirectURL string) {
 	logger.Printf("Redirect %s to sso_provider", redirectURL)
 	ssoURL := config.SSOURLString + "/session/sso_provider?" + ssoPayload(config.SSOSecret, config.ProxyURLString, redirectURL)
 	deleteCookie(w)
-	http.Redirect(w, r, ssoURL, 302)
+	http.Redirect(w, r, ssoURL, http.StatusMovedPermanently)
 }
 
 func shouldByPass(r *http.Request) bool {
@@ -334,6 +366,7 @@ func shouldByPass(r *http.Request) bool {
 	}
 	return r.Host == "home.bulletjournal.us" ||
 		strings.HasPrefix(r.RequestURI, "/home") ||
+		strings.HasPrefix(r.RequestURI, "/collab") ||
 		strings.HasPrefix(r.RequestURI, "/api/public/") ||
 		strings.HasPrefix(r.RequestURI, "/dae/public/") ||
 		strings.HasPrefix(r.RequestURI, "/public/") ||

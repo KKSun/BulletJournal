@@ -6,7 +6,9 @@ import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
 import javax.persistence.*;
+import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Size;
 import java.util.Objects;
 
 @Entity
@@ -14,7 +16,7 @@ import java.util.Objects;
         uniqueConstraints = {
                 @UniqueConstraint(columnNames = {"owner", "name"})
         })
-public class Project extends OwnedModel {
+public class Project extends NamedModel {
 
     @Id
     @GeneratedValue(generator = "project_generator")
@@ -24,6 +26,11 @@ public class Project extends OwnedModel {
             initialValue = 100
     )
     private Long id;
+
+    @NotBlank
+    @Size(min = 2, max = 100)
+    @Column(length = 100, nullable = false)
+    private String owner;
 
     @NotNull
     @Column(updatable = false, nullable = false)
@@ -39,6 +46,10 @@ public class Project extends OwnedModel {
 
     @Column(nullable = false, columnDefinition = "Boolean default 'false'")
     private boolean shared;
+
+    @OneToOne(cascade = CascadeType.ALL, mappedBy = "project")
+    @PrimaryKeyJoinColumn
+    private ProjectSetting projectSetting;
 
     public Project() {
     }
@@ -56,6 +67,14 @@ public class Project extends OwnedModel {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public String getOwner() {
+        return owner;
+    }
+
+    public void setOwner(String owner) {
+        this.owner = owner;
     }
 
     public Integer getType() {
@@ -109,6 +128,14 @@ public class Project extends OwnedModel {
                 this.getGroup().toVerbosePresentationModel(),
                 this.getDescription(),
                 this.isShared());
+    }
+
+    public ProjectSetting getProjectSetting() {
+        return projectSetting;
+    }
+
+    public void setProjectSetting(ProjectSetting projectSetting) {
+        this.projectSetting = projectSetting;
     }
 
     @Override

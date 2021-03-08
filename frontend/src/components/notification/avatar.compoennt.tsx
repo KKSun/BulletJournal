@@ -3,9 +3,9 @@ import React from 'react';
 import {
   AlertOutlined,
   ContactsOutlined,
-  DeleteOutlined,
+  DeleteOutlined, EditOutlined,
   EyeOutlined,
-  InfoCircleOutlined,
+  InfoCircleOutlined, LinkOutlined,
   PlusSquareOutlined,
   ShareAltOutlined,
   SolutionOutlined,
@@ -43,6 +43,7 @@ const TitleAvatar = ({source, type, originator}: titleAvatarProps) => {
       icon = <DeleteOutlined/>;
       break;
     case EventType.JoinGroupResponseEvent:
+    case EventType.RequestProjectItemWriteAccessResponseEvent:
       icon = <InfoCircleOutlined/>;
       break;
     case EventType.UpdateTaskAssigneeEvent:
@@ -52,6 +53,9 @@ const TitleAvatar = ({source, type, originator}: titleAvatarProps) => {
       break;
     case EventType.CreateProjectEvent:
       icon = <PlusSquareOutlined/>;
+      break;
+    case EventType.RequestProjectItemWriteAccessEvent:
+      icon = <EditOutlined />;
       break;
     case EventType.JoinProjectEvent:
       icon = <ContactsOutlined/>;
@@ -66,10 +70,14 @@ const TitleAvatar = ({source, type, originator}: titleAvatarProps) => {
       icon = <TagOutlined/>;
       break;
     case EventType.RevokeSharableEvent:
+    case EventType.DisableGroupShareEvent:
       icon = <StopOutlined/>;
       break;
     case EventType.NewSampleTaskEvent:
       icon = <AlertOutlined />;
+      break;
+    case EventType.ShareGroupEvent:
+      icon = <LinkOutlined />;
       break;
     default:
       icon = <EyeOutlined/>;

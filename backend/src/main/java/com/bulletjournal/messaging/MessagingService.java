@@ -1,6 +1,7 @@
 package com.bulletjournal.messaging;
 
 import com.bulletjournal.clients.UserClient;
+import com.bulletjournal.controller.models.Content;
 import com.bulletjournal.messaging.firebase.FcmClient;
 import com.bulletjournal.messaging.firebase.FcmMessageParams;
 import com.bulletjournal.messaging.mailjet.MailjetEmailClient;
@@ -113,6 +114,8 @@ public class MessagingService {
     private static final Pattern GROUP_INVITATION_TITLE_PATTERN =  Pattern
         .compile("(?s)(?<=##).*?(?=##)");
 
+    // EXPORT CONTENT AS EMAIL PROPERTIES
+    private static final String HTML_CONTENT_PROPERTY = "html_content";
 
     @Autowired
     public MessagingService(
@@ -253,13 +256,79 @@ public class MessagingService {
         return paramsList;
     }
 
+    /**
+     * Send exported task email to users
+     * @param requester export task as email requester
+     * @param task      task details
+     * @param contents  task contents details
+     * @param emails    target emails
+     */
+    public void sendExportedTaskEmailToUsers(
+        String requester, Task task, List<Content> contents, Set<String> emails) {
+
+    }
+
+    /**
+     * Send exported html content to user
+     * @param emailSubject email title
+     * @param htmlContent  email html content
+     * @param emails       target users
+     */
+    public void sendExportedHtmlContentEmailToUsers(
+        String emailSubject, String htmlContent, Set<String> emails
+    ) {
+        LOGGER.info("Sending exported content emails ...");
+        try {
+            List<MailjetEmailParams> emailParamsList = new ArrayList<>();
+            for (String email : emails) {
+                MailjetEmailParams mailjetEmailParams =
+                    createEmailParamForExportedHtmlContentEmail(
+                        emailSubject, htmlContent, email);
+
+                if (mailjetEmailParams != null) {
+                    emailParamsList.add(mailjetEmailParams);
+                }
+            }
+            mailjetClient.sendAllEmailAsync(emailParamsList);
+
+        } catch (Exception e) {
+            LOGGER.error("sendExportedContentEmailsToUsers failed", e);
+        }
+    }
+
+    /**
+     * Create email parameter for exported html content email
+     * @param emailSubject       email title
+     * @param htmlContent        email html content
+     * @param email              target user
+     * @return  mailjet email parameter
+     */
+    public MailjetEmailParams createEmailParamForExportedHtmlContentEmail(
+        String emailSubject, String htmlContent, String email) {
+
+        if (!this.isValidEmailAddr(email)) {
+            LOGGER.error("Invalid target email address: {}", email);
+            return null;
+        }
+
+        return new MailjetEmailParams(
+            Arrays.asList(new ImmutablePair(null, email)),
+            emailSubject,
+            null,
+            Template.EXPORT_CONTENT_AS_EMAIL,
+            HTML_CONTENT_PROPERTY,
+            htmlContent
+        );
+    }
+
     public void sendAppInvitationEmailsToUser(String inviter, List<String> emails) {
         LOGGER.info("Sending app invitation emails...");
         try {
             List<MailjetEmailParams> emailParamsList = new ArrayList<>();
             for (String email : new HashSet<>(emails)) {
                 MailjetEmailParams mailjetEmailParams =
-                    createEmailPramsForAppInvitation(inviter, this.getAvatar(inviter), email);
+                    createEmailPramsForAppInvitation(
+                        inviter, userClient.getAvatar(inviter), email);
                 if (mailjetEmailParams != null) {
                     emailParamsList.add(mailjetEmailParams);
                 }
@@ -358,7 +427,6 @@ public class MessagingService {
             );
     }
 
-
     private List<MailjetEmailParams> createEmailParamsForDueTask(
         Task task, Map<String, String> nameEmailMap
     ) {
@@ -368,7 +436,7 @@ public class MessagingService {
         Map<String, String> avatarMap = getAvatarMap(assignees);
         String taskUrl = BASE_TASK_URL + task.getId();
         String ownerName = task.getOwner();
-        String ownerAvatar = getAvatar(ownerName);
+        String ownerAvatar = userClient.getAvatar(ownerName);
         for (String receiver : assignees) {
             if (!nameEmailMap.containsKey(receiver)) {
                 continue;
@@ -415,17 +483,9 @@ public class MessagingService {
     private Map<String, String> getAvatarMap(List<String> usernames) {
         Map<String, String> ret = new HashMap<>();
         for (String username : usernames) {
-            ret.put(username, getAvatar(username));
+            ret.put(username, userClient.getAvatar(username));
         }
         return ret;
-    }
-
-    private String getAvatar(String username) {
-        com.bulletjournal.controller.models.User user = userClient.getUser(username);
-        if (user.getAvatar() != null) {
-            return user.getAvatar();
-        }
-        return NONE_STRING;
     }
 
     /**

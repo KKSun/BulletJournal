@@ -2,6 +2,7 @@ import {actions} from './reducer';
 import {Note} from './interface';
 import {History} from 'history';
 import {ProjectItemUIType} from "../project/constants";
+import { Content } from '../myBuJo/interface';
 
 export const updateNotes = (projectId: number) =>
   actions.NotesUpdate({ projectId: projectId });
@@ -17,8 +18,8 @@ export const updateNoteContentRevision = (
     contentId: contentId,
     revisionId: revisionId,
   });
-export const createNote = (projectId: number, name: string, labels: number[]) =>
-  actions.NotesCreate({ projectId: projectId, name: name, labels: labels });
+export const createNote = (projectId: number, name: string, location: string, labels: number[]) =>
+  actions.NotesCreate({ projectId: projectId, name: name, location: location, labels: labels });
 export const createContent = (noteId: number, text: string) =>
   actions.NoteContentCreate({ noteId: noteId, text: text });
 export const getNote = (noteId: number) => actions.NoteGet({ noteId: noteId });
@@ -38,8 +39,8 @@ export const deleteNotes = (
   });
 export const deleteContent = (noteId: number, contentId: number) =>
   actions.NoteContentDelete({ noteId: noteId, contentId: contentId });
-export const patchNote = (noteId: number, name: string, labels?: number[]) =>
-  actions.NotePatch({ noteId: noteId, name: name, labels: labels });
+export const patchNote = (noteId: number, name: string, location: string, labels?: number[]) =>
+  actions.NotePatch({ noteId: noteId, name: name, location: location, labels: labels });
 export const patchContent = (noteId: number, contentId: number, text: string, diff: string) =>
   actions.NoteContentPatch({
     noteId: noteId,
@@ -105,12 +106,31 @@ export const getNotesByOrder = (
     endDate: endDate,
   });
 
-export const patchNoteRevisionContents = (
-    noteId: number,
-    contentId: number,
-    revisionContents: string[],
-    etag: string
-) => actions.NotePatchRevisionContents({
-    noteId: noteId, contentId: contentId, revisionContents: revisionContents, etag: etag});
-
 export const noteReceived = (note: Note | undefined) => actions.noteReceived({note: note});
+
+export const updateColorSettingShown = (visible: boolean) =>
+  actions.updateColorSettingShown({colorSettingShown: visible});
+
+export const updateNoteColor = (
+  noteId: number,
+  color: string | undefined
+) =>
+  actions.updateNoteColor({ 
+    noteId: noteId,
+    color: color,
+  });
+
+export const shareNoteByEmail = (
+  noteId: number,
+  contents: Content[],
+  emails: string[],
+  targetUser?: string,
+  targetGroup?: number,
+) =>
+  actions.NoteShareByEmail({
+    noteId: noteId,
+    contents: contents,
+    emails: emails,
+    targetUser: targetUser,
+    targetGroup: targetGroup,
+  });

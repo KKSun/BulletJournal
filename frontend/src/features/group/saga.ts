@@ -1,31 +1,38 @@
-import { all, call, put, select, takeLatest } from 'redux-saga/effects';
-import { message } from 'antd';
+import {all, call, put, select, takeLatest} from 'redux-saga/effects';
+import {message} from 'antd';
 import {
   actions as groupsActions,
   AddUserGroupAction,
   ApiErrorAction,
+  CreateGroupShareLinkAction,
   DeleteGroupAction,
+  DisableGroupShareLinkAction,
   GetGroupAction,
   GroupCreateAction,
   GroupsAction,
   GroupUpdateAction,
+  JoinGroupViaLinkAction,
   PatchGroupAction,
   RemoveUserGroupAction,
 } from './reducer';
-import { PayloadAction } from 'redux-starter-kit';
+import {PayloadAction} from 'redux-starter-kit';
 import {
   addGroup,
   addUserGroup,
+  createGroupShareLink,
   deleteGroup,
+  disableGroupShareLink,
   fetchGroups,
   getGroup,
+  joinGroupViaLink,
   removeUserGroup,
   updateGroup,
 } from '../../apis/groupApis';
-import { IState } from '../../store';
-import { clearUser } from '../user/actions';
-import { actions as SystemActions } from '../system/reducer';
+import {IState} from '../../store';
+import {clearUser} from '../user/actions';
+import {actions as SystemActions} from '../system/reducer';
 import {reloadReceived} from "../myself/actions";
+import {GroupsWithOwner} from "./interface";
 
 function* apiErrorReceived(action: PayloadAction<ApiErrorAction>) {
   yield call(message.error, `Group Error Received: ${action.payload.error}`);
@@ -185,6 +192,78 @@ function* patchGroup(action: PayloadAction<PatchGroupAction>) {
   }
 }
 
+function* addGroupShareLink(action: PayloadAction<CreateGroupShareLinkAction>) {
+  try {
+    const {groupId} = action.payload;
+    const state: IState = yield select();
+    let groups: GroupsWithOwner[] = JSON.parse(JSON.stringify(state.group.groups));
+    groups.forEach(g => {
+      g.groups.forEach(gp => {
+        if (gp.id === groupId) {
+          gp.uid = "uid";
+        }
+      })
+    });
+    yield put(groupsActions.groupsReceived({groups: groups}));
+    const group = yield call(createGroupShareLink, groupId);
+    yield put(groupsActions.groupReceived({group: group}));
+    groups = JSON.parse(JSON.stringify(state.group.groups));
+    groups.forEach(g => {
+      g.groups.forEach(gp => {
+        if (gp.id === groupId) {
+          gp.uid = group.uid;
+        }
+      })
+    });
+    yield put(groupsActions.groupsReceived({groups: groups}));
+  } catch (error) {
+    if (error.message === 'reload') {
+      yield put(reloadReceived(true));
+    } else {
+      yield call(message.error, `Create group uid fail: ${error}`);
+    }
+  }
+}
+
+function* deleteGroupShareLink(action: PayloadAction<DisableGroupShareLinkAction>) {
+  try {
+    const {groupId} = action.payload;
+    const state: IState = yield select();
+    const groups: GroupsWithOwner[] = JSON.parse(JSON.stringify(state.group.groups));
+    groups.forEach(g => {
+      g.groups.forEach(gp => {
+        if (gp.id === groupId) {
+          gp.uid = undefined;
+        }
+      })
+    });
+    yield put(groupsActions.groupsReceived({groups: groups}));
+    const group = yield call(disableGroupShareLink, groupId);
+    yield put(groupsActions.groupReceived({ group: group }));
+  } catch (error) {
+    if (error.message === 'reload') {
+      yield put(reloadReceived(true));
+    } else {
+      yield call(message.error, `Disable group uid fail: ${error}`);
+    }
+  }
+}
+
+function* joinGroupViaShareLink(action: PayloadAction<JoinGroupViaLinkAction>) {
+  try {
+    const {groupUid} = action.payload;
+    const group = yield call(joinGroupViaLink, groupUid);
+    yield put(groupsActions.groupReceived({group:group}));
+
+  } catch (error) {
+    if (error.message === 'reload') {
+      yield put(reloadReceived(true));
+    } else {
+      yield call(message.error, `Join group via uid fail: ${error}`);
+    }
+  }
+}
+
 export default function* groupSagas() {
   yield all([
     yield takeLatest(
@@ -199,5 +278,8 @@ export default function* groupSagas() {
     yield takeLatest(groupsActions.getGroup.type, getUserGroup),
     yield takeLatest(groupsActions.patchGroup.type, patchGroup),
     yield takeLatest(groupsActions.groupUpdate.type, groupUpdate),
+    yield takeLatest(groupsActions.createGroupShareLink.type, addGroupShareLink),
+    yield takeLatest(groupsActions.disableGroupShareLink.type, deleteGroupShareLink),
+    yield takeLatest(groupsActions.joinGroupViaLink.type, joinGroupViaShareLink),
   ]);
 }

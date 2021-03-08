@@ -1,7 +1,7 @@
 package com.bulletjournal.clients;
 
 import com.bulletjournal.config.SSOConfig;
-import com.bulletjournal.controller.models.UpdateMyselfParams;
+import com.bulletjournal.controller.models.params.UpdateMyselfParams;
 import com.bulletjournal.controller.models.User;
 import com.bulletjournal.exceptions.ResourceAlreadyExistException;
 import com.bulletjournal.exceptions.ResourceNotFoundException;
@@ -91,7 +91,7 @@ public class UserClient {
 
         try {
             com.bulletjournal.repository.models.User createdUser
-                = this.userDaoJpa.create(username, getUserTimeZone(userInfo));
+                    = this.userDaoJpa.create(username, getUserTimeZone(userInfo));
             updateEmail(createdUser);
         } catch (ResourceAlreadyExistException ex) {
             LOGGER.info(username + " already exists");
@@ -225,4 +225,17 @@ public class UserClient {
             this.userDaoJpa.updateMyself(user.getName(), params);
         }
     }
+
+    /**
+     * get user avatar
+     * @param username given username
+     * @return avatar link; "NONE" if no avatar found
+     */
+    public String getAvatar(String username) {
+        User user = this.getUser(username);
+        if (user.getAvatar() != null) {
+            return user.getAvatar();
+        }
+        return "NONE";
+    };
 }

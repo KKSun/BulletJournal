@@ -2,16 +2,30 @@ package com.bulletjournal.controller;
 
 import com.bulletjournal.clients.UserClient;
 import com.bulletjournal.contents.ContentAction;
+import com.bulletjournal.contents.ContentType;
 import com.bulletjournal.controller.models.*;
+import com.bulletjournal.controller.models.params.*;
 import com.bulletjournal.controller.utils.EtagGenerator;
+import com.bulletjournal.es.ESUtil;
+import com.bulletjournal.messaging.FreeMarkerClient;
+import com.bulletjournal.messaging.MessagingService;
 import com.bulletjournal.notifications.*;
+import com.bulletjournal.notifications.informed.Informed;
+import com.bulletjournal.notifications.informed.RemoveNoteEvent;
+import com.bulletjournal.repository.GroupDaoJpa;
 import com.bulletjournal.repository.NoteDaoJpa;
 import com.bulletjournal.repository.NoteRepository;
+import com.bulletjournal.repository.ProjectDaoJpa;
 import com.bulletjournal.repository.models.ContentModel;
 import com.bulletjournal.repository.models.NoteContent;
 import com.bulletjournal.repository.models.ProjectItemModel;
+import freemarker.template.TemplateException;
+import java.io.IOException;
+import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -31,10 +45,12 @@ import static org.springframework.http.HttpHeaders.IF_NONE_MATCH;
 
 @RestController
 public class NoteController {
+    private static final Logger LOGGER = LoggerFactory.getLogger(NoteController.class);
 
     protected static final String NOTES_ROUTE = "/api/projects/{projectId}/notes";
     protected static final String NOTE_ROUTE = "/api/notes/{noteId}";
     protected static final String NOTE_SET_LABELS_ROUTE = "/api/notes/{noteId}/setLabels";
+    protected static final String NOTE_SET_COLOR_ROUTE = "/api/notes/{noteId}/setColor";
     protected static final String MOVE_NOTE_ROUTE = "/api/notes/{noteId}/move";
     protected static final String SHARE_NOTE_ROUTE = "/api/notes/{noteId}/share";
     protected static final String GET_SHARABLES_ROUTE = "/api/notes/{noteId}/sharables";
@@ -44,7 +60,7 @@ public class NoteController {
     protected static final String CONTENT_ROUTE = "/api/notes/{noteId}/contents/{contentId}";
     protected static final String CONTENTS_ROUTE = "/api/notes/{noteId}/contents";
     protected static final String CONTENT_REVISIONS_ROUTE = "/api/notes/{noteId}/contents/{contentId}/revisions/{revisionId}";
-    protected static final String REVISION_CONTENT_ROUTE = "/api/notes/{noteId}/contents/{contentId}/patchRevisionContents";
+    protected static final String NOTE_EXPORT_EMAIL_ROUTE = "/api/notes/{noteId}/exportEmail";
 
     @Autowired
     private NoteDaoJpa noteDaoJpa;
@@ -56,7 +72,19 @@ public class NoteController {
     private UserClient userClient;
 
     @Autowired
+    private ProjectDaoJpa projectDaoJpa;
+
+    @Autowired
     private NoteRepository noteRepository;
+
+    @Autowired
+    private FreeMarkerClient freeMarkerClient;
+
+    @Autowired
+    private MessagingService messagingService;
+
+    @Autowired
+    private GroupDaoJpa groupDaoJpa;
 
     @GetMapping(NOTES_ROUTE)
     public ResponseEntity<List<Note>> getNotes(@NotNull @PathVariable Long projectId,
@@ -157,11 +185,32 @@ public class NoteController {
         // curl -X DELETE
         // "http://localhost:8080/api/projects/11/transactions?transactions=12&transactions=11&transactions=13&transactions=14"
         // -H "accept: */*"
-        notes.forEach(n -> {
-            if (this.noteRepository.existsById(n)) {
-                this.deleteSingleNote(n);
-            }
-        });
+        if (notes.isEmpty()) {
+            return getNotes(projectId, null, null, null, null, null);
+        }
+
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        com.bulletjournal.repository.models.Project project = this.projectDaoJpa.getProject(projectId, username);
+        List<com.bulletjournal.repository.models.Note> noteList =
+                this.noteDaoJpa.findAllById(notes, project).stream()
+                        .filter(t -> t != null)
+                        .map(t -> (com.bulletjournal.repository.models.Note) t)
+                        .collect(Collectors.toList());
+        if (noteList.isEmpty()) {
+            return getNotes(projectId, null, null, null, null, null);
+        }
+
+        this.noteRepository.deleteInBatch(noteList);
+
+        List<String> deleteESDocumentIds = ESUtil.getProjectItemSearchIndexIds(notes, ContentType.TASK);
+        this.notificationService.deleteESDocument(new RemoveElasticsearchDocumentEvent(deleteESDocumentIds));
+
+        for (com.bulletjournal.repository.models.Note note : noteList) {
+            this.notificationService.trackActivity(
+                    new Auditable(projectId, "deleted Note ##" + note.getName() +
+                            "## in BuJo ##" + project.getName() + "##", username,
+                            note.getId(), Timestamp.from(Instant.now()), ContentAction.DELETE_NOTE));
+        }
         return getNotes(projectId, null, null, null, null, null);
     }
 
@@ -177,6 +226,13 @@ public class NoteController {
     public Note setLabels(@NotNull @PathVariable Long noteId, @NotNull @RequestBody List<Long> labels) {
         String username = MDC.get(UserClient.USER_NAME_KEY);
         this.notificationService.inform(this.noteDaoJpa.setLabels(username, noteId, labels));
+        return getNote(noteId);
+    }
+
+    @PutMapping(NOTE_SET_COLOR_ROUTE)
+    public Note setColor(@NotNull @PathVariable Long noteId, @RequestBody Optional<String> color) {
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        this.noteDaoJpa.setColor(username, noteId, color.orElse(null));
         return getNote(noteId);
     }
 
@@ -252,8 +308,9 @@ public class NoteController {
     @GetMapping(CONTENTS_ROUTE)
     public List<Content> getContents(@NotNull @PathVariable Long noteId) {
         String username = MDC.get(UserClient.USER_NAME_KEY);
-        return Content.addOwnerAvatar(this.noteDaoJpa.getContents(noteId, username).stream()
+        List<Content> contents = Content.addOwnerAvatar(this.noteDaoJpa.getContents(noteId, username).stream()
                 .map(t -> t.toPresentationModel()).collect(Collectors.toList()), this.userClient);
+        return contents;
     }
 
     @DeleteMapping(CONTENT_ROUTE)
@@ -292,14 +349,23 @@ public class NoteController {
         return Revision.addAvatar(revision, this.userClient);
     }
 
-    @PostMapping(REVISION_CONTENT_ROUTE)
-    public Content patchRevisionContents(@NotNull @PathVariable Long noteId,
-                                      @NotNull @PathVariable Long contentId,
-                                      @NotNull @RequestBody  RevisionContentsParams revisionContentsParams,
-                                      @RequestHeader(IF_NONE_MATCH) String etag) {
+    @PostMapping(NOTE_EXPORT_EMAIL_ROUTE)
+    public void exportNoteAsEmail(
+            @NotNull @PathVariable Long noteId,
+            @NotNull @RequestBody ExportProjectItemAsEmailParams params) {
         String username = MDC.get(UserClient.USER_NAME_KEY);
-        NoteContent content = this.noteDaoJpa.patchRevisionContentHistory(
-            contentId, noteId, username, revisionContentsParams.getRevisionContents(), etag);
-        return content == null ? new Content() : content.toPresentationModel();
+        Set<String> targetEmails =
+            groupDaoJpa.getEmails(params.getTargetGroup(), params.getTargetUser());
+        targetEmails.addAll(params.getEmails());
+
+        com.bulletjournal.repository.models.Note note = noteDaoJpa.getProjectItem(noteId, username);
+        try {
+            String html = freeMarkerClient.convertProjectItemIntoHtmlString(note, username, params.getContents());
+            String emailSubject = username + " is sharing note <" +  note.getName() + "> with you.";
+            messagingService.sendExportedHtmlContentEmailToUsers(emailSubject, html, targetEmails);
+        }
+        catch (IOException | TemplateException e) {
+            LOGGER.error("Failed to convert note into HTML string");
+        }
     }
 }

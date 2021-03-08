@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {Modal, Input, Form, Button, Select, Tooltip} from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import { connect } from 'react-redux';
 import { withRouter, RouteComponentProps, useParams } from 'react-router';
 import { createNote } from '../../features/notes/actions';
@@ -15,6 +15,8 @@ import {onFilterLabel} from "../../utils/Util";
 import {Button as FloatButton, darkColors, lightColors} from "react-floating-action-button";
 import {useHistory} from "react-router-dom";
 import {PlusCircleTwoTone} from "@ant-design/icons/lib";
+import SearchBar from '../map-search-bar/search-bar.component';
+
 const { Option } = Select;
 
 type NoteProps = {
@@ -23,7 +25,7 @@ type NoteProps = {
 
 interface NoteCreateFormProps {
   mode: string;
-  createNote: (projectId: number, name: string, labels: number[]) => void;
+  createNote: (projectId: number, name: string, location: string, labels: number[]) => void;
   updateNoteVisible: (visible: boolean) => void;
   addNoteVisible: boolean;
   labelOptions: Label[];
@@ -36,6 +38,7 @@ const AddNote: React.FC<
   const { project, mode } = props;
   const [form] = Form.useForm();
   const history = useHistory();
+  const [location, setLocation] = useState('');
   const { projectId } = useParams();
 
   useEffect(() => {
@@ -46,10 +49,16 @@ const AddNote: React.FC<
 
   const addNote = (values: any) => {
     if (project) {
-      props.createNote(project.id, values.noteName, values.labels);
+      props.createNote(project.id, values.noteName, location, values.labels);
     }
     props.updateNoteVisible(false);
   };
+
+  const getLocationItem =() => {
+	return <Form.Item label={<div><EnvironmentOutlined/><span style={{padding: '0 4px'}}>Location</span></div>}>
+	  <SearchBar setLocation={setLocation} location={location}/>
+	</Form.Item>;
+  }
 
   const onCancel = () => props.updateNoteVisible(false);
   const openModal = () => props.updateNoteVisible(true);
@@ -78,6 +87,9 @@ const AddNote: React.FC<
           >
             <Input placeholder='Enter Note Name' allowClear />
           </Form.Item>
+          {location && location.length > 40 ? <Tooltip title={location} placement="bottom">
+            {getLocationItem()}
+          </Tooltip> : getLocationItem()}
           <div>
             <Form.Item name="labels" label={
               <Tooltip title="Click to go to labels page to create label">
@@ -112,7 +124,6 @@ const AddNote: React.FC<
         <Button type='primary' onClick={openModal}>
           Create New Note
         </Button>
-        {getModal()}
       </div>
     );
   }
@@ -121,7 +132,7 @@ const AddNote: React.FC<
         <FloatButton
             tooltip="Add New Note"
             onClick={openModal}
-            styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+            styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
         >
           <PlusOutlined/>
         </FloatButton>

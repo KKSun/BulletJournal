@@ -2,15 +2,16 @@ import React from 'react';
 import {Link, useHistory} from 'react-router-dom';
 import {connect} from 'react-redux';
 import {Avatar, message, Popconfirm, Popover, Tag, Tooltip} from 'antd';
-import {CreditCardOutlined, DeleteTwoTone, DollarOutlined, MoreOutlined,} from '@ant-design/icons';
-import {deleteTransaction} from '../../features/transactions/actions';
-import {Label, stringToRGB} from '../../features/label/interface';
+import {BgColorsOutlined, CreditCardOutlined, DeleteTwoTone, DollarOutlined, MoreOutlined,} from '@ant-design/icons';
+import {deleteTransaction, updateTransactionColorSettingShown} from '../../features/transactions/actions';
+import {Label} from '../../features/label/interface';
 import {Transaction} from '../../features/transactions/interface';
 import './project-item.styles.less';
 import moment from 'moment-timezone';
 import {IState} from '../../store';
 import {ProjectItemUIType, ProjectType} from '../../features/project/constants';
 //import modal
+import ShareProjectItem from '../modals/share-project-item.component';
 import MoveProjectItem from '../modals/move-project-item.component';
 import EditTransaction from '../modals/edit-transaction.component';
 import {getIcon, getItemIcon,} from '../draggable-labels/draggable-label-list.component';
@@ -20,6 +21,8 @@ import {animation, IconFont, Item, Menu, MenuProvider} from "react-contexify";
 import {theme as ContextMenuTheme} from "react-contexify/lib/utils/styles";
 import CopyToClipboard from "react-copy-to-clipboard";
 import {CopyOutlined} from "@ant-design/icons/lib";
+import {convertToTextWithRRule} from "../../features/recurrence/actions";
+import {stringToRGB} from "../../utils/Util";
 
 const LocaleCurrency = require('locale-currency'); //currency code
 
@@ -29,34 +32,60 @@ type TransactionProps = {
   theme: string;
   setSelectedLabel: (label: Label) => void;
   showModal?: (user: User) => void;
+  updateTransactionColorSettingShown: (
+    visible: boolean
+  ) => void;
 };
 
 type TransactionManageProps = {
   inModal?: boolean;
   transaction: Transaction;
-  type: ProjectItemUIType;
-  deleteTransaction: (transactionId: number, type: ProjectItemUIType) => void;
+  type?: ProjectItemUIType;
+  deleteTransaction: (transactionId: number, onSuccess?: Function, type?: ProjectItemUIType, dateTime?: string) => void;
+  onDeleteSuccess?: Function;
 };
 
 const ManageTransaction: React.FC<TransactionManageProps> = (props) => {
-  const { transaction, deleteTransaction, inModal, type } = props;
+  const { transaction, deleteTransaction, inModal, type, onDeleteSuccess } = props;
+
+    const getPopConfirmForDelete = (transaction: Transaction) => {
+        if (!transaction.date || !transaction.recurrenceRule) {
+            // recurring or single occurrence
+            return <Popconfirm
+                title='Are you sure?'
+                okText='Yes'
+                cancelText='No'
+                className='group-setting'
+                placement='bottom'
+                onConfirm={() => deleteTransaction(transaction.id, onDeleteSuccess, type)}
+            >
+                <div className='popover-control-item'>
+                    <span>Delete</span>
+                    <DeleteTwoTone twoToneColor='#f5222d'/>
+                </div>
+            </Popconfirm>
+        }
+
+        return <Popconfirm
+            title="One Time Only or All Events"
+            okText="Series"
+            cancelText="Occurrence"
+            className='group-setting'
+            placement='bottom'
+            onConfirm={() => deleteTransaction(transaction.id, onDeleteSuccess, type)}
+            onCancel={() => deleteTransaction(transaction.id, onDeleteSuccess, type, transaction.date + ' ' + transaction.time)}
+        >
+            <div className='popover-control-item'>
+                <span>Delete</span>
+                <DeleteTwoTone twoToneColor='#f5222d'/>
+            </div>
+        </Popconfirm>
+    }
 
   if (inModal === true) {
     return (
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <Popconfirm
-              title='Are you sure?'
-              okText='Yes'
-              cancelText='No'
-              className='group-setting'
-              placement='bottom'
-              onConfirm={() => deleteTransaction(transaction.id, type)}
-          >
-            <div className='popover-control-item'>
-              <span>Delete</span>
-              <DeleteTwoTone twoToneColor='#f5222d' />
-            </div>
-          </Popconfirm>
+        <div style={{display: 'flex', flexDirection: 'column'}}>
+            {getPopConfirmForDelete(transaction)}
         </div>
     );
   }
@@ -69,25 +98,19 @@ const ManageTransaction: React.FC<TransactionManageProps> = (props) => {
         projectItemId={transaction.id}
         mode='div'
       />
-      <Popconfirm
-        title='Are you sure?'
-        okText='Yes'
-        cancelText='No'
-        className='group-setting'
-        placement='bottom'
-        onConfirm={() => deleteTransaction(transaction.id, type)}
-      >
-        <div className='popover-control-item'>
-          <span>Delete</span>
-          <DeleteTwoTone twoToneColor='#f5222d' />
-        </div>
-      </Popconfirm>
+      <ShareProjectItem
+        type={ProjectType.LEDGER}
+        projectItemId={transaction.id}
+        mode="div"
+      />
+      {getPopConfirmForDelete(transaction)}
     </div>
   );
 };
 
 const TransactionItem: React.FC<TransactionProps & TransactionManageProps> = (props) => {
-  const { transaction, theme, deleteTransaction, inModal, inProject, showModal, type, setSelectedLabel } = props;
+  const { transaction, theme, deleteTransaction, inModal, inProject, showModal,
+      type, setSelectedLabel, updateTransactionColorSettingShown, onDeleteSuccess } = props;
   // hook history in router
   const history = useHistory();
   // jump to label searching page by label click
@@ -97,7 +120,30 @@ const TransactionItem: React.FC<TransactionProps & TransactionManageProps> = (pr
   };
 
   const getPaymentDateTime = () => {
+    if (transaction.id < 0 && transaction.createdAt){
+        const createdTime = moment(transaction.createdAt).format('YYYY-MM-DD HH:mm');
+        return (<Tooltip 
+                    title={createdTime}
+                    placement='bottom'
+                >
+                    <div className="project-item-time">
+                        {createdTime}
+                    </div>
+        </Tooltip>)
+    }
     if (!transaction.date) {
+        if (transaction.recurrenceRule) {
+            const s = convertToTextWithRRule(transaction.recurrenceRule);
+            return <Tooltip
+                title={s}
+                placement={'bottom'}
+            >
+                <div className="project-item-time">
+                    <Tag className="item-tag">{s}</Tag>
+                </div>
+            </Tooltip>
+        }
+
       return null;
     }
 
@@ -124,12 +170,13 @@ const TransactionItem: React.FC<TransactionProps & TransactionManageProps> = (pr
     const amount = `${transaction.amount} ${
       props.currency ? LocaleCurrency.getCurrency(props.currency) : ''
     }`;
+    let displayAmount = transaction.id > 0 ? transaction.amount : (transaction.amount).toFixed(2);
     switch (transaction.transactionType) {
       case 0:
         return (
           <Tooltip title={`Income ${amount}`}>
             <span className='transaction-item-income'>
-              <DollarOutlined /> {transaction.amount}
+              <DollarOutlined /> {displayAmount}
             </span>
           </Tooltip>
         );
@@ -137,7 +184,7 @@ const TransactionItem: React.FC<TransactionProps & TransactionManageProps> = (pr
         return (
           <Tooltip title={`Expense ${amount}`}>
             <span className='transaction-item-expense'>
-              <DollarOutlined /> {transaction.amount}
+              <DollarOutlined /> {displayAmount}
             </span>
           </Tooltip>
         );
@@ -147,8 +194,10 @@ const TransactionItem: React.FC<TransactionProps & TransactionManageProps> = (pr
   };
 
   const getAvatar = (user: User) => {
-    if (!inProject || !showModal) return <span
-        className='user-avatar-icon'><Avatar src={user.avatar} size='small' /></span>;
+    if (!inProject || !showModal) {
+        return <span
+            className='user-avatar-icon'><Avatar src={user.avatar} size='small' /></span>;
+    }
     return (
         <span
             className='user-avatar-icon'
@@ -165,7 +214,7 @@ const TransactionItem: React.FC<TransactionProps & TransactionManageProps> = (pr
 
     const getProjectItemContentDiv = () => {
         return <div className='project-item-content'>
-            <Link to={`/transaction/${transaction.id}`}>
+            <Link to={`/transaction/${transaction.id}`} className={transaction.id < 0 ? "disabled-link" : ''}>
                 <h3 className='project-item-name'>
                     <Tooltip
                         title={`Created by ${transaction.owner.alias}`}
@@ -201,8 +250,13 @@ const TransactionItem: React.FC<TransactionProps & TransactionManageProps> = (pr
         </div>;
     }
 
+    const handleClickChangeBgColor = (transactionId: number) => {
+        transactionId > 0 && history.push(`/transaction/${transactionId}`);
+        updateTransactionColorSettingShown(true);
+    }
+
     const getProjectItemContentWithMenu = () => {
-        if (inModal === true) {
+        if (inModal === true || transaction.id < 0) {
             return getProjectItemContentDiv()
         }
 
@@ -211,7 +265,7 @@ const TransactionItem: React.FC<TransactionProps & TransactionManageProps> = (pr
                 {getProjectItemContentDiv()}
             </MenuProvider>
 
-            <Menu id={`transaction${transaction.id}`}
+            <Menu id={`transaction${transaction.id}`} style={{background:bgColor}}
                   theme={theme === 'DARK' ? ContextMenuTheme.dark : ContextMenuTheme.light}
                   animation={animation.zoom}>
                 <CopyToClipboard
@@ -223,12 +277,19 @@ const TransactionItem: React.FC<TransactionProps & TransactionManageProps> = (pr
                         <span>Copy Link Address</span>
                     </Item>
                 </CopyToClipboard>
+                <Item onClick={() => handleClickChangeBgColor(transaction.id)}>
+                    <IconFont style={{fontSize: '14px', paddingRight: '6px'}}><BgColorsOutlined/></IconFont>
+                    <span>Set Background Color</span>
+                </Item>
             </Menu>
         </>;
     }
 
+    const bgColorSetting = transaction.color ? JSON.parse(transaction.color) : undefined;
+    const bgColor = bgColorSetting ? `rgba(${ bgColorSetting.r }, ${ bgColorSetting.g }, ${ bgColorSetting.b }, ${ bgColorSetting.a })` : undefined;
+
     return (
-        <div className='project-item'>
+        <div className='project-item' style={{background: bgColor}}>
             {getProjectItemContentWithMenu()}
             <div className='project-control'>
                 <div className='project-item-owner'>
@@ -241,6 +302,7 @@ const TransactionItem: React.FC<TransactionProps & TransactionManageProps> = (pr
                 <div className='project-item-owner'>
                     {getTransactionInfo(transaction)}
                 </div>
+                <div style={{ visibility: transaction.id > 0 ? 'inherit' : 'hidden' }}>
                 <Popover
                     arrowPointAtCenter
                     placement='rightTop'
@@ -251,6 +313,7 @@ const TransactionItem: React.FC<TransactionProps & TransactionManageProps> = (pr
                             type={type}
                             deleteTransaction={deleteTransaction}
                             inModal={inModal}
+                            onDeleteSuccess={onDeleteSuccess}
                         />
                     }
                     trigger='click'
@@ -259,6 +322,7 @@ const TransactionItem: React.FC<TransactionProps & TransactionManageProps> = (pr
                             <MoreOutlined/>
                           </span>
                 </Popover>
+                </div>
             </div>
         </div>
   );
@@ -272,4 +336,5 @@ const mapStateToProps = (state: IState) => ({
 export default connect(mapStateToProps, {
   deleteTransaction,
   setSelectedLabel,
+  updateTransactionColorSettingShown,
 })(TransactionItem);

@@ -1,5 +1,8 @@
 import {doDelete, doFetch, doPatch, doPost, doPut} from './api-helper';
 import {Note} from '../features/notes/interface';
+import {Content} from '../features/myBuJo/interface';
+import {createHTML} from '../components/content/content-item.component';
+import Quill from "quill";
 
 export const fetchNotes = (
   projectId: number,
@@ -56,10 +59,12 @@ export const deleteNotes = (projectId: number, notesId: number[]) => {
 export const createNote = (
   projectId: number,
   name: string,
+  location: string,
   labels?: number[]
 ) => {
   const postBody = JSON.stringify({
     name: name,
+    location: location,
     labels: labels,
   });
   return doPost(`/api/projects/${projectId}/notes`, postBody)
@@ -78,9 +83,10 @@ export const putNotes = (projectId: number, notes: Note[], etag: string) => {
   );
 };
 
-export const updateNote = (noteId: number, name: string, labels?: number[]) => {
+export const updateNote = (noteId: number, name: string, location: string, labels?: number[]) => {
   const patchBody = JSON.stringify({
     name: name,
+    location: location,
     labels: labels,
   });
   return doPatch(`/api/notes/${noteId}`, patchBody)
@@ -223,18 +229,38 @@ export const getContentRevision = (
     });
 };
 
-export const patchRevisionContents = (
-    noteId: number,
-    contentId: number,
-    revisionContents: string[],
-    etag: string,
+export const putNoteColor = (noteId: number, color: string | undefined) => {
+  return doPut(`/api/notes/${noteId}/setColor`, color)
+    .then((res) => res.json())
+    .catch((err) => {
+      throw Error(err.message);
+    });
+};
+
+export const shareNoteByEmail = (
+  noteId: number,
+  contents: Content[],
+  emails: string[],
+  targetUser?: string,
+  targetGroup?: number,
 ) => {
-  const patchBody = JSON.stringify({
-    revisionContents: revisionContents,
+  const Delta = Quill.import('delta');
+  let contentsHTML : Content[] = [];
+  contents.forEach((content) => {
+    let contentHTML = {...content};
+    contentHTML['text'] = createHTML(new Delta(JSON.parse(content.text)['delta']));
+    contentsHTML.push(contentHTML);
+  })
+  
+  const postBody = JSON.stringify({
+    targetUser: targetUser,
+    targetGroup: targetGroup,
+    emails: emails,
+    contents: contentsHTML,
   });
-  return doPost(`/api/notes/${noteId}/contents/${contentId}/patchRevisionContents`, patchBody, etag)
-      .then((res) => res.json())
-      .catch((err) => {
-        throw Error(err);
-      });
+  return doPost(`/api/notes/${noteId}/exportEmail`, postBody)
+    .then((res) => (res))
+    .catch((err) => {
+      throw Error(err);
+    });
 };

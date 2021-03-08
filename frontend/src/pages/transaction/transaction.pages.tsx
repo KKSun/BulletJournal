@@ -1,65 +1,63 @@
 // react imports
-import React, { useEffect, useState } from 'react';
-import { useHistory, useParams } from 'react-router-dom';
-import { connect } from 'react-redux';
+import React, {useEffect, useState} from 'react';
+import {useHistory, useParams} from 'react-router-dom';
+import {connect} from 'react-redux';
 // features
-import { Transaction } from '../../features/transactions/interface';
-import { IState } from '../../store';
+import {Transaction} from '../../features/transactions/interface';
+import {IState} from '../../store';
+import {ProjectItemUIType, ProjectType,} from '../../features/project/constants';
 import {
-  ProjectItemUIType,
-  ProjectType,
-} from '../../features/project/constants';
-import {
-  deleteTransaction, deleteContent,
+  deleteContent,
+  deleteTransaction,
   getTransaction,
-  updateTransactionContents,
+  updateTransactionColorSettingShown,
+  updateTransactionContents
 } from '../../features/transactions/actions';
-import { dateFormat } from '../../features/myBuJo/constants';
+import {dateFormat} from '../../features/myBuJo/constants';
 // modals import
 import EditTransaction from '../../components/modals/edit-transaction.component';
 import MoveProjectItem from '../../components/modals/move-project-item.component';
+import ShareProjectItem from '../../components/modals/share-project-item.component';
 // antd imports
+import {Avatar, BackTop, Card, Col, Divider, message, Popconfirm, Row, Statistic, Tag, Tooltip,} from 'antd';
 import {
-  Avatar,
-  BackTop,
-  Card,
-  Col,
-  Divider, message,
-  Popconfirm,
-  Row,
-  Statistic,
-  Tooltip,
-} from 'antd';
-import {
+  BankTwoTone,
+  BgColorsOutlined,
   CreditCardOutlined,
   DeleteTwoTone,
   DollarCircleOutlined,
+  PlusOutlined,
   SyncOutlined,
   UpSquareOutlined,
-  PlusOutlined,
 } from '@ant-design/icons';
 import moment from 'moment';
 import DraggableLabelsList from '../../components/draggable-labels/draggable-label-list.component';
 import TransactionContentList from '../../components/content/content-list.component';
-import { Content } from '../../features/myBuJo/interface';
+import {Content} from '../../features/myBuJo/interface';
 import './transaction-page.styles.less';
 import 'braft-editor/dist/index.css';
 import ContentEditorDrawer from '../../components/content-editor/content-editor-drawer.component';
 import LabelManagement from '../project/label-management.compoent';
+import {Button as FloatButton, Container, darkColors, lightColors,} from 'react-floating-action-button';
+import {setDisplayMore, setDisplayRevision} from "../../features/content/actions";
 import {
-  Container,
-  Button as FloatButton,
-  lightColors,
-  darkColors,
-} from 'react-floating-action-button';
-import { setDisplayMore, setDisplayRevision } from "../../features/content/actions";
-import {CopyOutlined, DeleteOutlined, EditOutlined, HighlightOutlined} from "@ant-design/icons/lib";
+  CopyOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  EnvironmentOutlined,
+  HighlightOutlined
+} from "@ant-design/icons/lib";
 import {animation, IconFont, Item, Menu, MenuProvider} from "react-contexify";
 import {theme as ContextMenuTheme} from "react-contexify/lib/utils/styles";
 import CopyToClipboard from "react-copy-to-clipboard";
 import {getProject} from "../../features/project/actions";
 import {Project} from "../../features/project/interface";
 import {contentEditable} from "../note/note.pages";
+import TransactionColorSettingDialog from '../../components/modals/transaction-color.component';
+import {convertToTextWithRRule} from "../../features/recurrence/actions";
+import BankList from "../../components/modals/bank-list.component";
+import BankAccountElem from "../../components/settings/bank-account";
+import {resizeFloatButton} from "../../utils/Util";
 
 const LocaleCurrency = require('locale-currency');
 
@@ -69,9 +67,12 @@ type TransactionProps = {
   currency: string;
   transaction: Transaction | undefined;
   contents: Content[];
-  deleteTransaction: (transactionId: number, type: ProjectItemUIType) => void;
+  deleteTransaction: (transactionId: number, onSuccess?: Function, type?: ProjectItemUIType, dateTime?: string) => void;
   updateTransactionContents: (transactionId: number, updateDisplayMore?: boolean) => void;
   getProject: (projectId: number) => void;
+  updateTransactionColorSettingShown: (
+    visible: boolean
+  ) => void;
 };
 
 interface TransactionPageHandler {
@@ -82,6 +83,29 @@ interface TransactionPageHandler {
   setDisplayRevision: (displayRevision: boolean) => void;
   deleteContent: (taskId: number, contentId: number) => void;
 }
+
+const getLocation = (transaction: Transaction) => {
+    if(!transaction.location){
+        return null;
+    }
+    const transactionLocation = `Location: ${transaction.location}`
+    return (
+        <Tooltip title={transactionLocation}>
+            <Tag icon={<EnvironmentOutlined />}>{transaction.location}</Tag>
+        </Tooltip>
+    );
+  };
+
+const getTransactionStatisticsDiv = (transaction: Transaction) => {
+  if (!transaction.location) {
+    return null;
+  }
+  return <div
+      className="transaction-location-card"
+  >
+    {getLocation(transaction)}
+  </div>;
+};
 
 const TransactionPage: React.FC<TransactionPageHandler & TransactionProps> = (
   props
@@ -100,13 +124,14 @@ const TransactionPage: React.FC<TransactionPageHandler & TransactionProps> = (
     setDisplayMore,
     setDisplayRevision,
     deleteContent,
-    getProject
+    getProject,
+    updateTransactionColorSettingShown,
   } = props;
 
   // get id of Transaction from router
   const { transactionId } = useParams();
   // state control drawer displaying
-  const [showEditor, setEditorShow] = useState(false);
+  const [showEditor, setEditorShow] = useState(true);
   const [labelEditable, setLabelEditable] = useState(false);
   const currencyType = LocaleCurrency.getCurrency(currency);
   // hook history in router
@@ -126,6 +151,7 @@ const TransactionPage: React.FC<TransactionPageHandler & TransactionProps> = (
     setDisplayMore(false);
     setDisplayRevision(false);
     getProject(transaction.projectId);
+    resizeFloatButton(4);
   }, [transaction]);
 
   if (!transaction) return null;
@@ -158,62 +184,77 @@ const TransactionPage: React.FC<TransactionPageHandler & TransactionProps> = (
     transactionId && getTransaction(parseInt(transactionId));
   };
 
+  const bankAccount = transaction?.bankAccount;
+
   const createContentElem = (
     <Container>
       <FloatButton
           tooltip="Go to Parent BuJo"
           onClick={() => history.push(`/projects/${transaction.projectId}`)}
-          styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+          styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
       >
         <UpSquareOutlined/>
       </FloatButton>
+      <TransactionColorSettingDialog />
       <FloatButton
           tooltip="Refresh Contents"
           onClick={handleRefresh}
-          styles={{backgroundColor: darkColors.grey, color: lightColors.white}}
+          styles={{backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
       >
         <SyncOutlined/>
       </FloatButton>
       {contentEditable(myself, content, transaction, project) && <FloatButton
         tooltip="Delete Content"
         onClick={handleDelete}
-        styles={{ backgroundColor: darkColors.grey, color: lightColors.white }}
+        styles={{ backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
       >
         <DeleteOutlined />
       </FloatButton>}
       {content && content.revisions.length > 1 && contentEditable(myself, content, transaction, project) && <FloatButton
         tooltip={`View Revision History (${content.revisions.length - 1})`}
         onClick={handleOpenRevisions}
-        styles={{ backgroundColor: darkColors.grey, color: lightColors.white }}
+        styles={{ backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
       >
         <HighlightOutlined />
       </FloatButton>}
       {contentEditable(myself, content, transaction, project) && <FloatButton
         tooltip="Edit Content"
         onClick={handleEdit}
-        styles={{ backgroundColor: darkColors.grey, color: lightColors.white }}
+        styles={{ backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
       >
         <EditOutlined />
       </FloatButton>}
       <FloatButton
         tooltip="Add Content"
         onClick={createHandler}
-        styles={{ backgroundColor: darkColors.grey, color: lightColors.white }}
+        styles={{ backgroundColor: darkColors.grey, color: lightColors.white, fontSize: '25px'}}
       >
         <PlusOutlined />
       </FloatButton>
     </Container>
-
   );
 
   const getPaymentDateTime = (transaction: Transaction) => {
     if (!transaction.date) {
+      if (transaction.recurrenceRule) {
+        const s = convertToTextWithRRule(transaction.recurrenceRule);
+        return <Col span={12}>
+          <Card style={{background: bgColor}}>
+            <Statistic
+                title='Recurring Transaction'
+                value={s}
+                valueStyle={{ fontSize: '21px' }}
+            />
+          </Card>
+        </Col>
+      }
+
       return null;
     }
 
     return (
       <Col span={12}>
-        <Card>
+        <Card style={{background: bgColor}}>
           <Statistic
             title={moment(transaction.date, dateFormat).fromNow()}
             value={`${transaction.date} ${
@@ -230,8 +271,11 @@ const TransactionPage: React.FC<TransactionPageHandler & TransactionProps> = (
     setLabelEditable((labelEditable) => !labelEditable);
   };
 
+  const bgColorSetting = transaction.color ? JSON.parse(transaction.color) : undefined;
+  const bgColor = bgColorSetting ? `rgba(${ bgColorSetting.r }, ${ bgColorSetting.g }, ${ bgColorSetting.b }, ${ bgColorSetting.a })` : undefined;
+
   return (
-    <div className="tran-page">
+    <div className="tran-page" style={{background: bgColor}}>
       <BackTop />
 
       <Tooltip
@@ -250,7 +294,7 @@ const TransactionPage: React.FC<TransactionPageHandler & TransactionProps> = (
               <span>{transaction.name}</span>
             </MenuProvider>
 
-            <Menu id={`transaction${transaction.id}`}
+            <Menu id={`transaction${transaction.id}`} style={{background:bgColor}}
                   theme={theme === 'DARK' ? ContextMenuTheme.dark : ContextMenuTheme.light}
                   animation={animation.zoom}>
               <CopyToClipboard
@@ -262,6 +306,10 @@ const TransactionPage: React.FC<TransactionPageHandler & TransactionProps> = (
                   <span>Copy Link Address</span>
                 </Item>
               </CopyToClipboard>
+              <Item onClick={() => updateTransactionColorSettingShown(true)}>
+                  <IconFont style={{fontSize: '14px', paddingRight: '6px'}}><BgColorsOutlined/></IconFont>
+                  <span>Set Background Color</span>
+              </Item>
             </Menu>
           </>
           <DraggableLabelsList
@@ -287,6 +335,11 @@ const TransactionPage: React.FC<TransactionPageHandler & TransactionProps> = (
             projectItemId={transaction.id}
             mode="icon"
           />
+          <ShareProjectItem
+              type={ProjectType.LEDGER}
+              projectItemId={transaction.id}
+              mode="icon"
+          />
           <EditTransaction transaction={transaction} mode="icon" />
           <Tooltip title="Delete">
             <Popconfirm
@@ -294,8 +347,8 @@ const TransactionPage: React.FC<TransactionPageHandler & TransactionProps> = (
               okText="Yes"
               cancelText="No"
               onConfirm={() => {
-                deleteTransaction(transaction.id, ProjectItemUIType.PAGE);
-                history.goBack();
+                deleteTransaction(transaction.id, undefined, ProjectItemUIType.PAGE);
+                setTimeout(() => history.goBack(), 500);
               }}
               className="group-setting"
               placement="bottom"
@@ -305,27 +358,30 @@ const TransactionPage: React.FC<TransactionPageHandler & TransactionProps> = (
               </div>
             </Popconfirm>
           </Tooltip>
+          {myself === transaction.payer.name && <BankList/>}
         </div>
       </div>
-      <Divider />
-      <div className="transaction-statistic-card">
+      {bankAccount && <BankAccountElem bankAccount={bankAccount} mode='banner'/>}
+      <div className="transaction-statistic-card" style={{background: bgColor}}>
         <Row gutter={10}>
           {getPaymentDateTime(transaction)}
           <Col span={12}>
-            <Card>
+            <Card style={{background: bgColor}}>
               <Statistic
                 title={
                   (transaction.transactionType === 0 ? 'Income' : 'Expense') +
                   ` ${currencyType ? `(${currencyType})` : ''}`
                 }
                 value={transaction.amount}
+                valueStyle={{ color: transaction.transactionType === 0 ? '#3f8600' : '#cf1322' }}
                 prefix={<DollarCircleOutlined />}
               />
             </Card>
           </Col>
         </Row>
       </div>
-      <Divider />
+	  {getTransactionStatisticsDiv(transaction)}
+      <Divider style={{marginTop: '5px'}}/>
       <div className="tran-content">
         <div className="content-list">
           <TransactionContentList
@@ -363,5 +419,6 @@ export default connect(mapStateToProps, {
   deleteContent,
   setDisplayMore,
   setDisplayRevision,
-  getProject
+  getProject,
+  updateTransactionColorSettingShown,
 })(TransactionPage);

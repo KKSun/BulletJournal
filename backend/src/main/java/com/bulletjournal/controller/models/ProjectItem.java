@@ -8,6 +8,7 @@ import com.google.gson.annotations.Expose;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -27,7 +28,9 @@ public abstract class ProjectItem {
     @NotNull
     protected User owner;
 
-    protected List<Label> labels;
+    private String location;
+
+    protected List<Label> labels = new ArrayList<>();
 
     protected Long updatedAt;
 
@@ -39,10 +42,11 @@ public abstract class ProjectItem {
     }
 
     public ProjectItem(Long id, @NotBlank @Size(min = 1, max = 100) String name, @NotNull User owner,
-                       @NotNull Project project, List<Label> labels) {
+                       @NotNull Project project, List<Label> labels, String location) {
         this.id = id;
         this.name = name;
         this.owner = owner;
+        this.location = location;
         if (project != null) {
             this.projectId = project.getId();
         }
@@ -61,6 +65,7 @@ public abstract class ProjectItem {
             case TRANSACTION:
                 Transaction transaction = ((Transaction) projectItem);
                 transaction.setPayer(userClient.getUser(transaction.getPayer().getName()));
+                BankAccount.addOwnerAvatar(transaction.getBankAccount(), userClient);
                 break;
             case TASK:
                 Task task = ((Task) projectItem);
@@ -146,6 +151,14 @@ public abstract class ProjectItem {
         this.createdAt = createdAt;
     }
 
+    public String getLocation() {
+        return location;
+    }
+
+    public void setLocation(String location) {
+        this.location = location;
+    }
+
     public boolean isShared() {
         return shared;
     }
@@ -163,12 +176,13 @@ public abstract class ProjectItem {
                 Objects.equals(getName(), that.getName()) &&
                 Objects.equals(getProjectId(), that.getProjectId()) &&
                 Objects.equals(getOwner(), that.getOwner()) &&
-                Objects.equals(getLabels(), that.getLabels());
+                Objects.equals(getLabels(), that.getLabels()) &&
+                Objects.equals(getLocation(), that.getLocation());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(getId(), getName(), getProjectId(), getOwner(), getLabels());
+        return Objects.hash(getId(), getName(), getProjectId(), getOwner(), getLabels(), getLocation());
     }
 
     public void clone(ProjectItem projectItem) {
@@ -179,5 +193,22 @@ public abstract class ProjectItem {
         this.setOwner(projectItem.getOwner());
         this.setUpdatedAt(projectItem.getUpdatedAt());
         this.setCreatedAt(projectItem.getCreatedAt());
+        this.setLocation(projectItem.getLocation());
+        if (projectItem instanceof Note) {
+            ((Note) this).setColor(((Note) projectItem).getColor());
+        }
+        if (projectItem instanceof Transaction) {
+            ((Transaction) this).setColor(((Transaction) projectItem).getColor());
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "ProjectItem{" +
+                "id=" + id +
+                ", name='" + name + '\'' +
+                ", projectId=" + projectId +
+                ", owner=" + owner +
+                '}';
     }
 }

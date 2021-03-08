@@ -2,10 +2,20 @@ package com.bulletjournal.controller;
 
 import com.bulletjournal.clients.UserClient;
 import com.bulletjournal.contents.ContentAction;
+import com.bulletjournal.contents.ContentType;
 import com.bulletjournal.controller.models.*;
+import com.bulletjournal.controller.models.params.*;
 import com.bulletjournal.controller.utils.EtagGenerator;
+import com.bulletjournal.es.ESUtil;
 import com.bulletjournal.exceptions.UnAuthorizedException;
+import com.bulletjournal.messaging.FreeMarkerClient;
+import com.bulletjournal.messaging.MessagingService;
 import com.bulletjournal.notifications.*;
+import com.bulletjournal.notifications.informed.Informed;
+import com.bulletjournal.notifications.informed.RemoveTaskEvent;
+import com.bulletjournal.notifications.informed.SetTaskStatusEvent;
+import com.bulletjournal.notifications.informed.UpdateTaskAssigneeEvent;
+import com.bulletjournal.repository.GroupDaoJpa;
 import com.bulletjournal.repository.ProjectDaoJpa;
 import com.bulletjournal.repository.TaskDaoJpa;
 import com.bulletjournal.repository.TaskRepository;
@@ -13,8 +23,12 @@ import com.bulletjournal.repository.models.CompletedTask;
 import com.bulletjournal.repository.models.ContentModel;
 import com.bulletjournal.repository.models.ProjectItemModel;
 import com.bulletjournal.repository.models.TaskContent;
+import freemarker.template.TemplateException;
+import java.io.IOException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -35,6 +49,7 @@ import static org.springframework.http.HttpHeaders.IF_NONE_MATCH;
 @RestController
 public class TaskController {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(TaskController.class);
     public static final String TASKS_ROUTE = "/api/projects/{projectId}/tasks";
     protected static final String TASK_ROUTE = "/api/tasks/{taskId}";
     protected static final String SET_TASK_STATUS_ROUTE = "/api/tasks/{taskId}/setStatus";
@@ -46,6 +61,8 @@ public class TaskController {
     protected static final String TASK_SET_LABELS_ROUTE = "/api/tasks/{taskId}/setLabels";
     protected static final String MOVE_TASK_ROUTE = "/api/tasks/{taskId}/move";
     protected static final String SHARE_TASK_ROUTE = "/api/tasks/{taskId}/share";
+    protected static final String TASK_EXPORT_EMAIL_ROUTE = "/api/tasks/{taskId}/exportEmail";
+    protected static final String TASK_EXPORT_ROUTE = "/api/tasks/{taskId}/export";
     protected static final String GET_SHARABLES_ROUTE = "/api/tasks/{taskId}/sharables";
     protected static final String REVOKE_SHARABLE_ROUTE = "/api/tasks/{taskId}/revokeSharable";
     protected static final String REMOVE_SHARED_ROUTE = "/api/tasks/{taskId}/removeShared";
@@ -55,7 +72,6 @@ public class TaskController {
     protected static final String COMPLETED_TASK_CONTENTS_ROUTE = "/api/completedTasks/{taskId}/contents";
     protected static final String CONTENT_REVISIONS_ROUTE = "/api/tasks/{taskId}/contents/{contentId}/revisions/{revisionId}";
     protected static final String TASK_STATISTICS_ROUTE = "/api/taskStatistics";
-    protected static final String REVISION_CONTENT_ROUTE = "/api/tasks/{taskId}/contents/{contentId}/patchRevisionContents";
 
     @Autowired
     private TaskDaoJpa taskDaoJpa;
@@ -71,6 +87,16 @@ public class TaskController {
 
     @Autowired
     private UserClient userClient;
+
+    @Autowired
+    private GroupDaoJpa groupDaoJpa;
+
+    @Autowired
+    private FreeMarkerClient freeMarkerClient;
+
+    @Autowired
+    private MessagingService messagingService;
+
 
     @GetMapping(TASKS_ROUTE)
     public ResponseEntity<List<Task>> getTasks(@NotNull @PathVariable Long projectId,
@@ -186,14 +212,36 @@ public class TaskController {
 
     @PostMapping(COMPLETE_TASKS_ROUTE)
     public ResponseEntity<List<Task>> completeTasks(@NotNull @PathVariable Long projectId,
-            @RequestParam List<Long> tasks) {
+                                                    @RequestParam List<Long> tasks) {
 
-        tasks.forEach(t -> {
-            if (this.taskRepository.existsById(t)) {
-                this.completeSingleTask(t, null);
-            }
-        });
+        if (tasks.isEmpty()) {
+            return getTasks(projectId, null, null, null, null, null);
+        }
 
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        com.bulletjournal.repository.models.Project project = this.projectDaoJpa.getProject(projectId, username);
+        List<com.bulletjournal.repository.models.Task> taskList =
+                this.taskDaoJpa.findAllById(tasks, project).stream()
+                        .filter(Objects::nonNull)
+                        .map(t -> (com.bulletjournal.repository.models.Task) t)
+                        .collect(Collectors.toList());
+        if (taskList.isEmpty()) {
+            return getTasks(projectId, null, null, null, null, null);
+        }
+        List<CompletedTask> completedTaskList = this.taskDaoJpa.completeInBatch(taskList);
+
+        List<String> deleteESDocumentIds = ESUtil.getProjectItemSearchIndexIds(tasks, ContentType.TASK);
+        this.notificationService.deleteESDocument(new RemoveElasticsearchDocumentEvent(deleteESDocumentIds));
+
+        this.notificationService.saveCompleteTasks(new SaveCompleteTasksEvent(completedTaskList));
+
+        for (com.bulletjournal.repository.models.Task task : taskList) {
+            this.notificationService.trackActivity(new Auditable(task.getProject().getId(),
+                    "completed Task ##" + task.getName() + "## in BuJo ##" + task.getProject().getName() + "##", username,
+                    task.getId(), Timestamp.from(Instant.now()), ContentAction.COMPLETE_TASK));
+        }
+
+        LOGGER.info("completeTasks done");
         return getTasks(projectId, null, null, null, null, null);
     }
 
@@ -292,11 +340,32 @@ public class TaskController {
         // curl -X DELETE
         // "http://localhost:8080/api/projects/11/transactions?transactions=12&transactions=11&transactions=13&transactions=14"
         // -H "accept: */*"
-        tasks.forEach(t -> {
-            if (this.taskRepository.existsById(t)) {
-                this.deleteSingleTask(t);
-            }
-        });
+        if (tasks.isEmpty()) {
+            return getTasks(projectId, null, null, null, null, null);
+        }
+
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        com.bulletjournal.repository.models.Project project = this.projectDaoJpa.getProject(projectId, username);
+        List<com.bulletjournal.repository.models.Task> taskList =
+                this.taskDaoJpa.findAllById(tasks, project).stream()
+                        .filter(t -> t != null)
+                        .map(t -> (com.bulletjournal.repository.models.Task) t)
+                        .collect(Collectors.toList());
+        if (taskList.isEmpty()) {
+            return getTasks(projectId, null, null, null, null, null);
+        }
+
+        this.taskRepository.deleteInBatch(taskList);
+
+        List<String> deleteESDocumentIds = ESUtil.getProjectItemSearchIndexIds(tasks, ContentType.TASK);
+        this.notificationService.deleteESDocument(new RemoveElasticsearchDocumentEvent(deleteESDocumentIds));
+
+        for (com.bulletjournal.repository.models.Task task : taskList) {
+            this.notificationService.trackActivity(
+                    new Auditable(projectId, "deleted Task ##" + task.getName() +
+                            "## in BuJo ##" + project.getName() + "##", username,
+                            task.getId(), Timestamp.from(Instant.now()), ContentAction.DELETE_TASK));
+        }
         return getTasks(projectId, null, null, null, null, null);
     }
 
@@ -342,6 +411,31 @@ public class TaskController {
         Informed inform = this.taskDaoJpa.shareProjectItem(taskId, shareProjectItemParams, username);
         this.notificationService.inform(inform);
         return null;
+    }
+
+    @PostMapping(TASK_EXPORT_EMAIL_ROUTE)
+    public void exportTaskAsEmail(
+            @NotNull @PathVariable Long taskId,
+            @NotNull @RequestBody ExportProjectItemAsEmailParams params) {
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        Set<String> targetEmails =
+            groupDaoJpa.getEmails(params.getTargetGroup(), params.getTargetUser());
+        targetEmails.addAll(params.getEmails());
+
+        com.bulletjournal.repository.models.Task task =  taskDaoJpa.getProjectItem(taskId, username);
+        try {
+            String html = freeMarkerClient.convertProjectItemIntoHtmlString(task, username, params.getContents());
+            String emailSubject = username + " is sharing task <" +  task.getName() + "> with you.";
+            messagingService.sendExportedHtmlContentEmailToUsers(emailSubject, html, targetEmails);
+        }
+        catch (IOException | TemplateException e) {
+          LOGGER.error("Failed to convert task into HTML string");
+        }
+    }
+
+    @PostMapping(TASK_EXPORT_ROUTE)
+    public void exportTask(@NotNull @PathVariable Long taskId,
+                           @NotNull @RequestBody ExportProjectItemParams exportProjectItemParams) {
     }
 
     @GetMapping(GET_SHARABLES_ROUTE)
@@ -492,14 +586,4 @@ public class TaskController {
         return taskStatistics;
     }
 
-    @PostMapping(REVISION_CONTENT_ROUTE)
-    public Content patchRevisionContents(@NotNull @PathVariable Long taskId,
-                                      @NotNull @PathVariable Long contentId,
-                                      @NotNull @RequestBody  RevisionContentsParams revisionContentsParams,
-                                      @RequestHeader(IF_NONE_MATCH) String etag) {
-        String username = MDC.get(UserClient.USER_NAME_KEY);
-        TaskContent content = this.taskDaoJpa.patchRevisionContentHistory(
-                contentId, taskId, username, revisionContentsParams.getRevisionContents(), etag);
-        return content == null ? new Content() : content.toPresentationModel();
-    }
 }

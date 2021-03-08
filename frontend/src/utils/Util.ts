@@ -51,3 +51,57 @@ export const includeProjectItem = (labelsToKeep: number[], labelsToRemove: numbe
     }
     return true;
 }
+
+const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+export const randomString = (length: number) => {
+    let result = '';
+    for (let i = length; i > 0; --i) {
+        result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
+}
+
+const colors = ['magenta', 'red', 'volcano', 'orange', 'gold', 'lime', 'green',
+    'cyan', 'blue', 'geekblue', 'purple'];
+
+export function stringToRGB(str: string) {
+    let hash: number = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+
+    return colors[hash % colors.length];
+}
+
+export const swatchesPickerColors = [['#FCE9DA', '#FFCEC7', '#FFD0A6', '#E098AE'],
+    ['#EFEFF1', '#ECD4D4', '#CCDBE2', '#C9CBE0'],
+    ['#E9E1D4', '#F5DDAD', '#F1BCAE', '#C9DECF'],
+    ['#F2EEE5', '#E5C1C5', '#C3E2DD', '#6ECEDA'],
+    ['#D5E1DF', '#EACACB', '#E2B3A3', '#A3B6C5'],
+    ['#FDF2F0', '#F8DAE2', '#DEB3CF', '#B57FB3'],
+    ['#FAF0E4', '#EECFBB', '#F6B99D', '#CB8A90'],
+    ['#FEF5D4', '#FFD6AA', '#EFBAD6', '#DADAFC']]
+
+export const resizeFloatButton = (count: number) => {
+    console.log('resizeFloatButton')
+    const button = document.querySelector("button.fab-item:last-child");
+    if (!button) {
+        console.log("button.fab-item:last-child not found");
+        return;
+    }
+
+    const b = button as HTMLElement;
+    setTimeout(() => resizeFloatButtonCall(b, true, count), 1000);
+}
+
+const resizeFloatButtonCall = (button: HTMLElement, enlarge: boolean, count: number) => {
+    if (count <= 0) {
+        return;
+    }
+
+    button.style.width = enlarge ? '160px' : '';
+    button.style.height = enlarge ? '160px' : '';
+    button.style.fontSize = enlarge ? '120px' : '25px';
+    setTimeout(() => resizeFloatButtonCall(button, !enlarge, count - 1), 1000);
+}

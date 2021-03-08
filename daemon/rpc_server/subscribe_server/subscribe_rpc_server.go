@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dchenk/go-render-quill"
 	"github.com/go-resty/resty/v2"
 	daemon "github.com/singerdmx/BulletJournal/daemon/api/service"
 	"github.com/singerdmx/BulletJournal/daemon/config"
@@ -121,7 +122,7 @@ func (provider *sessionProvider) terminateSession(clientId string, reason string
 }
 
 func (provider *sessionProvider) terminateAllSessions() {
-	for clientId, _ := range provider.sessionMap {
+	for clientId := range provider.sessionMap {
 		provider.terminateSession(clientId, "Terminate all connected sessions")
 	}
 }
@@ -129,7 +130,7 @@ func (provider *sessionProvider) terminateAllSessions() {
 func (provider *sessionProvider) getSessionDump() string {
 	ret := "\n\t------- Session Provider dump: --------"
 	ret += "\n\tConnected ClientId: {"
-	for clientId, _ := range provider.sessionMap {
+	for clientId := range provider.sessionMap {
 		ret += clientId + ", "
 	}
 	ret += "}"
@@ -221,8 +222,8 @@ func (s *SubscribeRpcServer) StartDispatcher() {
 				if err := s.sendCleanerServiceNotification(session, msg); err != nil {
 					s.handleDispatchingError(session, msg)
 				}
-			case consts.INVESTMENT_SERVICE_NAME:
-				if err := s.sendInvestmentServiceNotification(session, msg); err != nil {
+			case consts.SAMPLE_TASK_SERVICE_NAME:
+				if err := s.sendSampleTaskServiceNotification(session, msg); err != nil {
 					s.handleDispatchingError(session, msg)
 				}
 			case consts.REMINDER_SERVICE_NAME:
@@ -259,7 +260,7 @@ func (s *SubscribeRpcServer) Stop() {
 	s.sessionProvider.terminateAllSessions()
 }
 
-func (s *SubscribeRpcServer) sendInvestmentServiceNotification(
+func (s *SubscribeRpcServer) sendSampleTaskServiceNotification(
 	handle *streamHandle,
 	msg *daemon.StreamingMessage,
 ) error {
@@ -313,4 +314,19 @@ func (s *SubscribeRpcServer) SubscribeNotification(
 	err = <-errorChan
 	logger.Infof("Closing subscribe streaming for ClientId: %s due to: %v", clientId, err)
 	return err
+}
+
+func (s *SubscribeRpcServer) ConvertDeltaToHtml(ctx context.Context, request *types.ConvertJsonObjectsToHtmlRequest) (*types.ConvertJsonObjectsToHtmlResponse, error) {
+	delta := request.DeltaString
+	html, err := quill.Render([]byte(delta))
+	if err != nil {
+		logger.Error(err.Error())
+		return nil, err
+	}
+
+	htmlStr := string(html)
+	res := types.ConvertJsonObjectsToHtmlResponse{
+		HtmlOutput: htmlStr,
+	}
+	return &res, err
 }

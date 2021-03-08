@@ -25,6 +25,9 @@ public interface TaskRepository extends JpaRepository<Task, Long>, TaskRepositor
     @Query(value = "SELECT * FROM tasks WHERE :assignee = ANY(tasks.assignees) AND tasks.recurrence_rule IS NOT NULL", nativeQuery = true)
     List<Task> findTasksByAssigneeAndRecurrenceRuleNotNull(@Param("assignee") String assignee);
 
+    @Query(value = "SELECT * FROM tasks WHERE tasks.project_id IN :projectIds AND :assignee = ANY(tasks.assignees) AND tasks.recurrence_rule IS NOT NULL", nativeQuery = true)
+    List<Task> findTasksInProjectsByAssigneeAndRecurrenceRuleNotNull(@Param("assignee") String assignee, @Param("projectIds") List<Long> projectIds);
+
     List<Task> findTasksByRecurrenceRuleNotNull();
 
     List<Task> findTaskByProjectAndRecurrenceRuleNotNull(Project project);
@@ -33,7 +36,7 @@ public interface TaskRepository extends JpaRepository<Task, Long>, TaskRepositor
             + " AND tasks.start_time >= to_timestamp(:start, 'YYYY-MM-DD HH24:MI:SS') AND tasks.reminder_date_time <= to_timestamp(:end, 'YYYY-MM-DD HH24:MI:SS')", nativeQuery = true)
     List<Task> findRemindingTasksBetween(@Param("start") String start, @Param("end") String end);
 
-    Optional<Task> findTaskByGoogleCalendarEventId(String googleCalendarEventId);
+    Optional<Task> findTaskByGoogleCalendarEventIdAndProject(String googleCalendarEventId, Project project);
 
     @Query(value = "SELECT * FROM tasks WHERE :assignee = ANY(tasks.assignees) AND tasks.start_time IS NOT NULL AND tasks.reminder_date_time IS NOT NULL"
             + " AND tasks.start_time >= to_timestamp(:start, 'YYYY-MM-DD HH24:MI:SS') AND tasks.reminder_date_time <= to_timestamp(:now, 'YYYY-MM-DD HH24:MI:SS')", nativeQuery = true)

@@ -17,6 +17,8 @@ public class Note extends ProjectItem {
     @Valid
     private List<Note> subNotes = new ArrayList<>();
 
+    private String color;
+
     public Note() {
     }
 
@@ -26,8 +28,11 @@ public class Note extends ProjectItem {
                 @NotNull Project project,
                 List<Label> labels,
                 Long createdAt,
-                Long updatedAt) {
-        super(id, name, owner, project, labels);
+                Long updatedAt,
+                String location,
+                String color) {
+        super(id, name, owner, project, labels, location);
+        this.color = color;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
@@ -35,6 +40,14 @@ public class Note extends ProjectItem {
     @Override
     public ContentType getContentType() {
         return ContentType.NOTE;
+    }
+
+    public String getColor() {
+        return color;
+    }
+
+    public void setColor(String color) {
+        this.color = color;
     }
 
     public List<Note> getSubNotes() {
@@ -55,11 +68,12 @@ public class Note extends ProjectItem {
         if (!(o instanceof Note)) return false;
         if (!super.equals(o)) return false;
         Note note = (Note) o;
-        return Objects.equals(getSubNotes(), note.getSubNotes());
+        return Objects.equals(getSubNotes(), note.getSubNotes()) &&
+                Objects.equals(getColor(), note.getColor());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), getSubNotes());
+        return Objects.hash(super.hashCode(), getSubNotes(), getColor());
     }
 }

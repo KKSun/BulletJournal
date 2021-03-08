@@ -9,13 +9,19 @@ import {connect} from 'react-redux';
 import {setDisplayMore, setDisplayRevision,} from '../../features/content/actions';
 import Quill, {DeltaStatic} from "quill";
 import ReactQuill from "react-quill";
-import {patchTransactionRevisionContents} from "../../features/transactions/actions";
-import {patchTaskRevisionContents} from "../../features/tasks/actions";
-import {patchNoteRevisionContents} from "../../features/notes/actions";
-import {ContentType} from "../../features/myBuJo/constants";
 import 'react-quill/dist/quill.core.css';
 import 'react-quill/dist/quill.bubble.css';
 import 'react-quill/dist/quill.snow.css';
+import {readOnlyModules} from "../content-editor/content-editor-toolbar";
+import {ContentType} from "../../features/myBuJo/constants";
+import {patchContent as patchNoteContent} from "../../features/notes/actions";
+import {
+  patchContent as patchTaskContent,
+  patchSampleTaskContent
+} from "../../features/tasks/actions";
+import {
+  patchContent as patchTransactionContent
+} from "../../features/transactions/actions";
 
 const Delta = Quill.import('delta');
 
@@ -27,23 +33,29 @@ type ContentProps = {
   displayRevision: boolean;
   setDisplayMore: (displayMore: boolean) => void;
   setDisplayRevision: (displayRevision: boolean) => void;
-  patchNoteRevisionContents: (
+  patchNoteContent: (
       noteId: number,
       contentId: number,
-      revisionContents: string[],
-      etag: string
+      text: string,
+      diff: string
   ) => void;
-  patchTaskRevisionContents: (
+  patchTaskContent: (
       taskId: number,
       contentId: number,
-      revisionContents: string[],
-      etag: string
+      text: string,
+      diff: string
   ) => void;
-  patchTransactionRevisionContents: (
+  patchSampleTaskContent: (
+      taskId: number,
+      contentId: number,
+      text: string,
+      diff: string
+  ) => void;
+  patchTransactionContent: (
       transactionId: number,
       contentId: number,
-      revisionContents: string[],
-      etag: string
+      text: string,
+      diff: string
   ) => void;
 };
 
@@ -61,11 +73,17 @@ export const isContentEditable = (
 };
 
 export const createHTML = (delta: DeltaStatic) => {
-  const element = document.createElement('article');
+  const element = document.createElement('article1');
   const tmpEditor = new ReactQuill.Quill(element, { readOnly: true });
   tmpEditor.setContents(delta);
   return tmpEditor.root.innerHTML;
 };
+
+export const convertHtmlToDelta = (html: string) => {
+  const element = document.createElement('article2');
+  const tmpEditor = new ReactQuill.Quill(element, { readOnly: true });
+  return tmpEditor.clipboard.convert(html);
+}
 
 const ContentItem: React.FC<ContentProps> = ({
   content,
@@ -75,45 +93,55 @@ const ContentItem: React.FC<ContentProps> = ({
   displayRevision,
   setDisplayRevision,
   setDisplayMore,
-  patchNoteRevisionContents,
-  patchTaskRevisionContents,
-  patchTransactionRevisionContents
+  patchNoteContent,
+  patchTransactionContent,
+  patchTaskContent,
+  patchSampleTaskContent
 }) => {
+  //general patch content function
+  const patchContentCall: { [key in ContentType]: Function } = {
+    [ContentType.NOTE]: patchNoteContent,
+    [ContentType.TASK]: patchTaskContent,
+    [ContentType.TRANSACTION]: patchTransactionContent,
+    [ContentType.PROJECT]: () => {
+    },
+    [ContentType.GROUP]: () => {
+    },
+    [ContentType.LABEL]: () => {
+    },
+    [ContentType.CONTENT]: () => {
+    },
+    [ContentType.SAMPLE_TASK]: patchSampleTaskContent,
+  };
+  const patchContentFunction = patchContentCall[projectItem.contentType];
+
   const contentJson = JSON.parse(content.text);
-  let delta = contentJson['delta'];
-  if (contentJson['diff']) {
-    let revisionContents = [content.text];
-    if (!contentJson['###html###']) {
-      // first time opened by web and created by mobile
-      const c0 = JSON.stringify({delta: delta, '###html###': createHTML(new Delta(delta))});
-      revisionContents = [c0, c0]; // first revision
-    }
-    console.log(contentJson['diff'])
-    console.log(delta)
-    contentJson['diff'].forEach((d: any) => {
-      console.log("Applying diff " + JSON.stringify(d));
-      delta = new Delta(delta).compose(new Delta(d));
-      revisionContents.push(JSON.stringify({delta: delta, '###html###': createHTML(new Delta(delta))}));
+  const delta = contentJson['delta'];
+  const contentHtml = contentJson['$$$html$$$'];
+  let newDelta : DeltaStatic = new Delta();
+  if (contentHtml) {
+    console.log('contentHtml', contentHtml);
+    contentHtml.split('</p><p>').forEach((p: string) => {
+      if (p.startsWith('<p>')) {
+        p = p.substring(3);
+      }
+      if (p.endsWith('</p>')) {
+        p = p.substring(0, p.length - 4);
+      }
+      newDelta = newDelta.concat(convertHtmlToDelta(p));
+      newDelta = newDelta.insert('\n');
     });
 
-    console.log('new Delta', delta)
-    console.log('revisionContents', revisionContents);
-    switch (projectItem.contentType) {
-      case ContentType.TASK:
-        patchTaskRevisionContents(projectItem.id, content.id, revisionContents, content.etag);
-        break;
-      case ContentType.NOTE:
-        patchNoteRevisionContents(projectItem.id, content.id, revisionContents, content.etag);
-        break;
-      case ContentType.TRANSACTION:
-        patchTransactionRevisionContents(projectItem.id, content.id, revisionContents, content.etag);
-        break;
-    }
-  }
-
-  let contentHtml = contentJson['###html###'];
-  if (!contentHtml) {
-    contentHtml = createHTML(new Delta(delta));
+    console.log('newDelta', newDelta);
+    console.log('oldDelta', delta);
+    const diff = new Delta(delta).diff(newDelta);
+    console.log(diff)
+    patchContentFunction(
+        projectItem.id,
+        content.id,
+        JSON.stringify({delta: newDelta}),
+        JSON.stringify(diff)
+    );
   }
 
   const handleRevisionClose = () => {
@@ -148,17 +176,17 @@ const ContentItem: React.FC<ContentProps> = ({
     return targetContent.id === content.id;
   }
 
+  const val : DeltaStatic = new Delta(delta);
+
   return (
-    <div className="content-item-page-contianer">
-      <div className="ql-container ql-snow" style={{position: 'relative', borderWidth: '0', width: '100%'}}>
-        <div className="ql-editor" data-gramm="false" contentEditable="false">
-          <div
-            className="content-item-page"
-            dangerouslySetInnerHTML={{
-              __html: contentHtml ? contentHtml : '<p></p>',
-            }}
+    <div className="content-item-page-container">
+        <div className="content-item-page">
+          <ReactQuill
+              value={val}
+              theme="snow"
+              readOnly={true}
+              modules = {readOnlyModules}
           />
-        </div>
       </div>
 
       <ContentEditorDrawer
@@ -187,7 +215,8 @@ const mapStateToProps = (state: IState) => ({
 export default connect(mapStateToProps, {
   setDisplayMore,
   setDisplayRevision,
-  patchNoteRevisionContents,
-  patchTaskRevisionContents,
-  patchTransactionRevisionContents
+  patchNoteContent,
+  patchTaskContent,
+  patchTransactionContent,
+  patchSampleTaskContent
 })(ContentItem);

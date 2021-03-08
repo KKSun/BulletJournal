@@ -64,3 +64,37 @@ export const updateGroup = (groupId: number, name: string) => {
       throw Error(err.message);
     });
 };
+
+export const createGroupShareLink = (groupId: number) => {
+  const postBody = JSON.stringify({
+    groupId: groupId
+  });
+  return doPost(`/api/groups/${groupId}/links`, postBody)
+      .then(res => res.json())
+      .catch(err => {
+        throw Error(err.message);
+      });
+};
+
+export const disableGroupShareLink = (groupId: number) => {
+  const postBody = JSON.stringify({
+    groupId: groupId
+  });
+  return doPost(`/api/groups/${groupId}/disableLink`, postBody)
+      .then(res => res.json())
+      .catch(err => {
+        throw Error(err.message);
+      });
+};
+
+export const joinGroupViaLink = (groupUid: string) => {
+    const postBody = JSON.stringify({
+        groupUid: groupUid
+    });
+    return doPost(`/api/groups/${groupUid}/join`, postBody)
+        .then(res => res.json())
+        .catch(err => {
+            throw Error(err.message);
+        });
+};
+

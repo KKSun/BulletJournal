@@ -4,6 +4,7 @@ import com.bulletjournal.authz.Role;
 import com.bulletjournal.clients.UserClient;
 import com.bulletjournal.config.VersionConfig;
 import com.bulletjournal.controller.models.*;
+import com.bulletjournal.controller.models.params.*;
 import com.bulletjournal.exceptions.UnAuthorizedException;
 import com.bulletjournal.redis.RedisLockedIPRepository;
 import com.bulletjournal.redis.RedisLockedUserRepository;
@@ -141,18 +142,13 @@ public class AdminController {
     @GetMapping(USER_ROUTE)
     public Myself getUser(@NotBlank @PathVariable String username) {
         validateRequester();
-        String timezone = null;
-        Before before = null;
-        String currency = null;
-        String theme = null;
-        Integer points = 0;
 
         com.bulletjournal.repository.models.User user = this.userDaoJpa.getByName(username);
-        timezone = user.getTimezone();
-        before = user.getReminderBeforeTask();
-        currency = user.getCurrency();
-        theme = user.getTheme() == null ? Theme.LIGHT.name() : user.getTheme();
-        points = user.getPoints();
+        String timezone = user.getTimezone();
+        Before before = user.getReminderBeforeTask();
+        String currency = user.getCurrency();
+        String theme = user.getTheme() == null ? Theme.LIGHT.name() : user.getTheme();
+        Integer points = user.getPoints();
 
         User self = userClient.getUser(username);
         return new Myself(self, timezone, before, currency, theme, points);

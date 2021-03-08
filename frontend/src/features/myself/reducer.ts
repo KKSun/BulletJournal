@@ -2,6 +2,7 @@ import {createSlice, PayloadAction} from 'redux-starter-kit';
 import {UserPointActivity} from "../../pages/points/interface";
 import {SubscribedCategory} from "./interface";
 import {SampleTask} from "../templates/interface";
+import {BankAccount, BankAccountType} from "../transactions/interface";
 
 export type MyselfWithAvatar = {
     username?: string;
@@ -13,6 +14,7 @@ export type MyselfWithAvatar = {
     points?: number;
     firstTime?: boolean;
     sendUserInvitation?: boolean;
+    bankAccounts?: BankAccount[];
 };
 
 export type MyselfApiErrorAction = {
@@ -91,6 +93,28 @@ export type SubscribedCategories = {
     subscribedCategories: SubscribedCategory[];
 };
 
+export type GetBankAccountsAction = {};
+
+export type AddBankAccountAction = {
+    name: string,
+    accountType: BankAccountType,
+    onSuccess: (bankAccountId: number) => void,
+    accountNumber?: string,
+    description?: string
+};
+
+export type DeleteBankAccountAction = {
+    bankAccountId: number
+};
+
+export type UpdateBankAccountAction = {
+    id: number
+    name: string,
+    accountType: BankAccountType,
+    accountNumber?: string,
+    description?: string
+};
+
 let initialState = {
     username: '',
     avatar: '',
@@ -107,6 +131,7 @@ let initialState = {
     subscribedCategories: [] as SubscribedCategory[],
     sampleTasks: [] as SampleTask[],
     removingSampleTasks: false,
+    bankAccounts: [] as BankAccount[]
 };
 
 const slice = createSlice({
@@ -123,7 +148,8 @@ const slice = createSlice({
                 theme,
                 points,
                 firstTime,
-                sendUserInvitation
+                sendUserInvitation,
+                bankAccounts
             } = action.payload;
             if (username && username.length > 0) state.username = username;
             if (avatar && avatar.length > 0) state.avatar = avatar;
@@ -134,6 +160,7 @@ const slice = createSlice({
             if (points) state.points = points;
             if (firstTime) state.firstTime = firstTime;
             if (sendUserInvitation !== undefined) state.sendUserInvitation = sendUserInvitation;
+            if (bankAccounts) state.bankAccounts = bankAccounts;
         },
         reloadReceived: (state, action: PayloadAction<ReloadAction>) => {
             const {reload} = action.payload;
@@ -186,7 +213,11 @@ const slice = createSlice({
         removingSampleTasksReceived: (state, action: PayloadAction<DeletingSampleTasksAction>) => {
             const {deleting} = action.payload;
             state.removingSampleTasks = deleting;
-        }
+        },
+        getMyBankAccounts: (state, action: PayloadAction<GetBankAccountsAction>) => state,
+        addMyBankAccount: (state, action: PayloadAction<AddBankAccountAction>) => state,
+        deleteMyBankAccount: (state, action: PayloadAction<DeleteBankAccountAction>) => state,
+        updateMyBankAccount: (state, action: PayloadAction<UpdateBankAccountAction>) => state,
     },
 });
 

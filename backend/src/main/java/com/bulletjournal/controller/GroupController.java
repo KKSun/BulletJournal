@@ -1,14 +1,25 @@
 package com.bulletjournal.controller;
 
 import com.bulletjournal.clients.UserClient;
-import com.bulletjournal.controller.models.*;
+import com.bulletjournal.controller.models.Group;
+import com.bulletjournal.controller.models.GroupsWithOwner;
+import com.bulletjournal.controller.models.UserGroup;
+import com.bulletjournal.controller.models.params.*;
 import com.bulletjournal.controller.utils.EtagGenerator;
 import com.bulletjournal.exceptions.BadRequestException;
-import com.bulletjournal.notifications.*;
+import com.bulletjournal.notifications.Event;
+import com.bulletjournal.notifications.NotificationService;
+import com.bulletjournal.notifications.informed.DeleteGroupEvent;
+import com.bulletjournal.notifications.informed.Informed;
+import com.bulletjournal.notifications.informed.JoinGroupResponseEvent;
+import com.bulletjournal.notifications.informed.RemoveUserFromGroupEvent;
 import com.bulletjournal.redis.RedisEtagDaoJpa;
 import com.bulletjournal.redis.models.EtagType;
 import com.bulletjournal.repository.GroupDaoJpa;
+import com.bulletjournal.util.StringUtil;
 import com.google.common.collect.ImmutableList;
+import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -31,6 +42,9 @@ public class GroupController {
     public static final String ADD_USER_GROUP_ROUTE = "/api/addUserGroup";
     protected static final String REMOVE_USER_GROUP_ROUTE = "/api/removeUserGroup";
     protected static final String REMOVE_USER_GROUPS_ROUTE = "/api/removeUserGroups";
+    protected static final String CREATE_GROUP_SHARE_LINK = "/api/groups/{groupId}/links";
+    protected static final String DISABLE_GROUP_SHARE_LINK = "/api/groups/{groupId}/disableLink";
+    protected static final String JOIN_GROUP_VIA_LINK = "/api/groups/{uid}/join";
     private static final Logger LOGGER = LoggerFactory.getLogger(GroupController.class);
     @Autowired
     private GroupDaoJpa groupDaoJpa;
@@ -192,5 +206,34 @@ public class GroupController {
             this.notificationService.inform(new RemoveUserFromGroupEvent(events, username));
         }
         return getGroup(removeUserGroupParams.getGroupId());
+    }
+
+    @PostMapping(CREATE_GROUP_SHARE_LINK)
+    public Group createGroupShareLink(@NotNull @PathVariable Long groupId) {
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        String uuid = RandomStringUtils.randomAlphanumeric(StringUtil.UUID_LENGTH);
+        Informed informed = this.groupDaoJpa.setGroupShareLink(groupId, username, uuid);
+        this.notificationService.inform(informed);
+        return getGroup(groupId);
+    }
+
+    @PostMapping(DISABLE_GROUP_SHARE_LINK)
+    public Group disableGroupShareLink(@NotNull @PathVariable Long groupId) {
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        Informed informed = this.groupDaoJpa.setGroupShareLink(groupId, username, null);
+        this.notificationService.inform(informed);
+        return getGroup(groupId);
+    }
+
+    @PostMapping(JOIN_GROUP_VIA_LINK)
+    public Group joinGroupViaLink(@NotNull @PathVariable String uid) {
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        Pair<JoinGroupResponseEvent, com.bulletjournal.repository.models.Group> result =
+                this.groupDaoJpa.addUserGroupViaLink(username, uid);
+        JoinGroupResponseEvent joinGroupResponseEvent = result.getLeft();
+        if (joinGroupResponseEvent != null) {
+            this.notificationService.inform(joinGroupResponseEvent);
+        }
+        return getGroup(result.getRight().getId());
     }
 }

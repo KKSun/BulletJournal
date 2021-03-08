@@ -15,11 +15,6 @@ export const googleCalendarEventListUpdate = (
     startDate: startDate,
     endDate: endDate,
   });
-export const googleCalendarCreateEvents = (
-  projectId: number,
-  events: GoogleCalendarEvent[]
-) =>
-  actions.googleCalendarCreateEvents({ projectId: projectId, events: events });
 export const updateWatchedProject = (calendarId: string) =>
   actions.watchedProjectUpdate({ calendarId: calendarId });
 export const watchCalendar = (calendarId: string, projectId: number) =>
@@ -33,8 +28,8 @@ export const googleCalendarEventListReceived = (
     googleCalendarEventList: googleCalendarEventList,
   });
 
-export const importEventsToProject = (eventList: string[], projectId: number) =>
-  actions.importEventsToProject({ eventList: eventList, projectId: projectId });
+export const importEventsToProject = (eventList: string[], projectId: number, onSuccess: Function) =>
+  actions.importEventsToProject({ eventList: eventList, projectId: projectId, onSuccess: onSuccess });
 
 export const updateSyncing = (syncing: boolean) => {
   actions.updateSyncing({ syncing: syncing });

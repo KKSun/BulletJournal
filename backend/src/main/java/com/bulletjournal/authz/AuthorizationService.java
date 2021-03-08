@@ -3,6 +3,7 @@ package com.bulletjournal.authz;
 import com.bulletjournal.contents.ContentType;
 import com.bulletjournal.exceptions.UnAuthorizedException;
 import com.bulletjournal.repository.SharedProjectItemDaoJpa;
+import com.bulletjournal.repository.models.Group;
 import com.bulletjournal.repository.models.Project;
 import com.bulletjournal.repository.models.ProjectItemModel;
 import com.google.common.collect.ImmutableSet;
@@ -43,10 +44,14 @@ public class AuthorizationService {
             return;
         }
 
-        if (!project.getGroup().getAcceptedUsers()
-                .stream().anyMatch(u -> Objects.equals(requester, u.getUser().getName()))) {
-            throw new UnAuthorizedException("User " + requester + " not in Project "
-                    + project.getName());
+        validateRequesterInGroup(requester, project.getGroup(), true);
+    }
+
+    public void validateRequesterInGroup(String requester, Group group, boolean acceptedUserOnly) {
+        if ((acceptedUserOnly ? group.getAcceptedUsers() : group.getUsers())
+                .stream().noneMatch(u -> Objects.equals(requester, u.getUser().getName()))) {
+            throw new UnAuthorizedException("User " + requester + " not in Group "
+                    + group.getName());
         }
     }
 
@@ -54,6 +59,10 @@ public class AuthorizationService {
             String owner, String requester, ContentType contentType,
             Operation operation, Long contentId, Object... other)
             throws UnAuthorizedException {
+        if (ADMINS.contains(requester)) {
+            return;
+        }
+
         switch (contentType) {
             case PROJECT:
                 checkAuthorizedToOperateOnProject(owner, requester, operation, contentId);
@@ -71,6 +80,24 @@ public class AuthorizationService {
                 break;
             case LABEL:
                 checkAuthorizedToOperateOnLabel(owner, requester, operation, contentId);
+                break;
+            case BANK_ACCOUNT:
+                checkAuthorizedToOperateOnBankAccount(owner, requester, operation, contentId);
+                break;
+            default:
+        }
+    }
+
+    private void checkAuthorizedToOperateOnBankAccount(
+            String owner, String requester, Operation operation, Long contentId) {
+        switch (operation) {
+            case READ:
+            case DELETE:
+            case UPDATE:
+                if (!Objects.equals(owner, requester)) {
+                    throw new UnAuthorizedException("Bank account " + contentId + " is owner by " +
+                            owner + " while request is from " + requester);
+                }
                 break;
             default:
         }
@@ -137,12 +164,16 @@ public class AuthorizationService {
         String projectItemOwner = (String) other[0];
         String projectOwner = (String) other[1];
         ProjectItemModel projectItem = (ProjectItemModel) other[2];
+
         switch (operation) {
-            case DELETE:
             case UPDATE:
-                if (this.sharedProjectItemDaoJpa.getSharedProjectItems(requester).contains(projectItem)) {
+                // contents of project item being shared specifically can be edited
+                if (this.sharedProjectItemDaoJpa.getSharedProjectItems(requester).stream()
+                        .anyMatch(item -> Objects.equals(item.getId(), projectItem.getId()) &&
+                                Objects.equals(item.getContentType(), projectItem.getContentType()))) {
                     return;
                 }
+            case DELETE:
                 if (!Objects.equals(owner, requester) && !Objects.equals(projectOwner, requester)
                         && !Objects.equals(projectItemOwner, requester)) {
                     throw new UnAuthorizedException("Project Item " + contentId + " is owner by " +

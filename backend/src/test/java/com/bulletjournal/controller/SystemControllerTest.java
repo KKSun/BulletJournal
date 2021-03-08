@@ -1,6 +1,7 @@
 package com.bulletjournal.controller;
 
 import com.bulletjournal.controller.models.*;
+import com.bulletjournal.controller.models.params.CreateTaskParams;
 import com.bulletjournal.controller.utils.TestHelpers;
 import com.bulletjournal.controller.utils.ZonedDateTimeHelper;
 import com.google.common.collect.ImmutableList;
@@ -99,7 +100,7 @@ public class SystemControllerTest {
 
         String remindingTaskEtag = systemUpdates.getRemindingTaskEtag();
         systemUpdates = testRemindingTaskEtagMatch(p1, remindingTaskEtag);
-        assertNull(systemUpdates.getReminders());
+        assertTrue(systemUpdates.getReminders().isEmpty());
 
         deleteTask(t1);
         deleteTask(t2);

@@ -2,7 +2,6 @@ import { all, call, put, takeLatest, select } from 'redux-saga/effects';
 import { message } from 'antd';
 import {
   actions as calendarSyncActions,
-  GoogleCalendarCreateEventsAction,
   UnwatchedCalendarAction,
   UpdateExpirationTimeAction,
   UpdateGoogleCalendarEventListAction,
@@ -12,7 +11,6 @@ import {
 } from './reducer';
 import { PayloadAction } from 'redux-starter-kit';
 import {
-  createGoogleCalendarEvents,
   getGoogleCalendarEventList,
   getGoogleCalendarList,
   getGoogleCalendarLoginStatus,
@@ -104,24 +102,6 @@ function* googleCalendarEventListUpdate(
   }
 }
 
-function* googleCalendarCreateEvents(
-  action: PayloadAction<GoogleCalendarCreateEventsAction>
-) {
-  try {
-    const { projectId, events } = action.payload;
-    yield call(createGoogleCalendarEvents, projectId, events);
-  } catch (error) {
-    if (error.message === 'reload') {
-      yield put(reloadReceived(true));
-    } else {
-      yield call(
-          message.error,
-          `googleCalendarCreateEvents Error Received: ${error}`
-      );
-    }
-  }
-}
-
 function* updateWatchedProject(
   action: PayloadAction<UpdateWatchedProjectAction>
 ) {
@@ -193,7 +173,7 @@ function* importEventsToProject(
   action: PayloadAction<ImportEventsToProjectAction>
 ) {
   try {
-    const { projectId, eventList } = action.payload;
+    const { projectId, eventList, onSuccess } = action.payload;
     const state: IState = yield select();
     let importEvents = [] as GoogleCalendarEvent[];
     const allEvents = state.calendarSync.googleCalendarEventList;
@@ -207,6 +187,8 @@ function* importEventsToProject(
     });
 
     yield call(importEventsApi, projectId, importEvents);
+    yield call(message.success, 'Calendar events imported successfully');
+    onSuccess();
   } catch (error) {
     yield call(message.error, `watchCalendarChannel Error Received: ${error}`);
   }
@@ -221,10 +203,6 @@ export default function* calendarSyncSagas() {
     yield takeLatest(
       calendarSyncActions.googleCalendarEventListUpdate.type,
       googleCalendarEventListUpdate
-    ),
-    yield takeLatest(
-      calendarSyncActions.googleCalendarCreateEvents.type,
-      googleCalendarCreateEvents
     ),
     yield takeLatest(
       calendarSyncActions.watchedProjectUpdate.type,

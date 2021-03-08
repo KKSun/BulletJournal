@@ -35,6 +35,7 @@ import { User } from '../../features/group/interface';
 import { CreditCardOutlined } from '@ant-design/icons';
 import AddTransaction from "../../components/modals/add-transaction.component";
 import { ProjectItemUIType } from "../../features/project/constants";
+import {resizeFloatButton} from "../../utils/Util";
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
@@ -159,6 +160,7 @@ const TransactionProject: React.FC<TransactionProps> = (props) => {
           labelsToKeep,
           labelsToRemove
       );
+      resizeFloatButton(2);
     }
   }, [labelsToRemove, labelsToKeep]);
 
@@ -658,7 +660,7 @@ const TransactionProject: React.FC<TransactionProps> = (props) => {
 
       <List className='transaction-list'>
         {transactions.map((item) => (
-          <List.Item key={item.id} className='transaction-list-item'>
+          <List.Item key={`${item.id} + ' ' + ${item.date}`} className='transaction-list-item'>
             <TransactionItem
               transaction={item}
               type={ProjectItemUIType.PROJECT}

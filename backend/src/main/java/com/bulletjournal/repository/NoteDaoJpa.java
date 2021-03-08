@@ -3,11 +3,12 @@ package com.bulletjournal.repository;
 import com.bulletjournal.authz.AuthorizationService;
 import com.bulletjournal.authz.Operation;
 import com.bulletjournal.contents.ContentType;
-import com.bulletjournal.controller.models.CreateNoteParams;
+import com.bulletjournal.controller.models.params.CreateNoteParams;
 import com.bulletjournal.controller.models.ProjectType;
-import com.bulletjournal.controller.models.UpdateNoteParams;
+import com.bulletjournal.controller.models.params.UpdateNoteParams;
 import com.bulletjournal.controller.utils.ProjectItemsGrouper;
 import com.bulletjournal.controller.utils.ZonedDateTimeHelper;
+import com.bulletjournal.es.ESUtil;
 import com.bulletjournal.es.repository.SearchIndexDaoJpa;
 import com.bulletjournal.exceptions.BadRequestException;
 import com.bulletjournal.hierarchy.HierarchyItem;
@@ -16,9 +17,10 @@ import com.bulletjournal.hierarchy.NoteRelationsProcessor;
 import com.bulletjournal.notifications.Event;
 import com.bulletjournal.repository.models.*;
 import com.bulletjournal.repository.utils.DaoHelper;
-import com.google.gson.Gson;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.retry.annotation.Backoff;
@@ -36,8 +38,7 @@ import java.util.stream.Collectors;
 
 @Repository
 public class NoteDaoJpa extends ProjectItemDaoJpa<NoteContent> {
-
-    private static final Gson GSON = new Gson();
+    private static final Logger LOGGER = LoggerFactory.getLogger(NoteDaoJpa.class);
 
     @PersistenceContext
     EntityManager entityManager;
@@ -55,6 +56,11 @@ public class NoteDaoJpa extends ProjectItemDaoJpa<NoteContent> {
     private SharedProjectItemDaoJpa sharedProjectItemDaoJpa;
     @Autowired
     private SearchIndexDaoJpa searchIndexDaoJpa;
+    @Autowired
+    private UserDaoJpa userDaoJpa;
+    @Autowired
+    private GroupDaoJpa groupDaoJpa;
+
 
     @Override
     public JpaRepository getJpaRepository() {
@@ -135,7 +141,7 @@ public class NoteDaoJpa extends ProjectItemDaoJpa<NoteContent> {
             }
         }
 
-        notes.sort(ProjectItemsGrouper.NOTE_COMPARATOR);
+        notes.sort(ProjectItemsGrouper.NOTE_COMPARATOR_REVERSE_ORDER);
         return this.labelDaoJpa.getLabelsForProjectItemList(notes.stream()
                 .map(Note::toPresentationModel).collect(Collectors.toList()));
     }
@@ -150,6 +156,7 @@ public class NoteDaoJpa extends ProjectItemDaoJpa<NoteContent> {
         note.setProject(project);
         note.setOwner(owner);
         note.setName(createNoteParams.getName());
+        note.setLocation(createNoteParams.getLocation());
         if (createNoteParams.getLabels() != null && !createNoteParams.getLabels().isEmpty()) {
             note.setLabels(createNoteParams.getLabels());
         }
@@ -165,6 +172,9 @@ public class NoteDaoJpa extends ProjectItemDaoJpa<NoteContent> {
 
         DaoHelper.updateIfPresent(updateNoteParams.hasName(), updateNoteParams.getName(),
                 (value) -> note.setName(value));
+
+        DaoHelper.updateIfPresent(updateNoteParams.hasLocation(), updateNoteParams.getLocation(),
+                (value) -> note.setLocation(value));
 
         if (updateNoteParams.hasLabels()) {
             note.setLabels(updateNoteParams.getLabels());
@@ -189,7 +199,7 @@ public class NoteDaoJpa extends ProjectItemDaoJpa<NoteContent> {
         }
 
         List<Note> notes = this.noteRepository.findNotesByOwnerAndProject(owner, project);
-        notes.sort(ProjectItemsGrouper.NOTE_COMPARATOR);
+        notes.sort(ProjectItemsGrouper.NOTE_COMPARATOR_REVERSE_ORDER);
         return notes.stream().map(t -> {
             List<com.bulletjournal.controller.models.Label> labels = getLabelsToProjectItem(t);
             return t.toPresentationModel(labels);
@@ -257,6 +267,11 @@ public class NoteDaoJpa extends ProjectItemDaoJpa<NoteContent> {
     }
 
     @Override
+    public NoteContent newContent(String text) {
+        return new NoteContent(text);
+    }
+
+    @Override
     List<Long> findItemLabelsByProject(Project project) {
         return noteRepository.findUniqueLabelsByProject(project.getId());
     }
@@ -290,7 +305,7 @@ public class NoteDaoJpa extends ProjectItemDaoJpa<NoteContent> {
         List<String> deleteESDocumentIds = new ArrayList<>();
         Note note = this.getProjectItem(noteId, requester);
 
-        deleteESDocumentIds.add(this.searchIndexDaoJpa.getProjectItemSearchIndexId(note));
+        deleteESDocumentIds.add(ESUtil.getProjectItemSearchIndexId(note));
         List<NoteContent> noteContents = findContents(note);
         for (NoteContent content : noteContents) {
             deleteESDocumentIds.add(this.searchIndexDaoJpa.getContentSearchIndexId(content));
@@ -305,5 +320,42 @@ public class NoteDaoJpa extends ProjectItemDaoJpa<NoteContent> {
         deleteESDocumentIds.add(this.searchIndexDaoJpa.getContentSearchIndexId(content));
 
         return deleteESDocumentIds;
+    }
+
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
+    public void setColor(String requester, Long noteId, String color) {
+        Note note = this.getProjectItem(noteId, requester);
+
+        this.authorizationService.checkAuthorizedToOperateOnContent(note.getOwner(), requester, ContentType.NOTE,
+                Operation.UPDATE, noteId, note.getProject().getOwner());
+        note.setColor(color);
+        this.noteRepository.save(note);
+    }
+
+    private static final String[] MONTHS = {"January", "February", "March"};
+    private static final String[] MONTH_COLORS = {
+            "{\"r\":238,\"g\":207,\"b\":187,\"a\":1}",
+            "{\"r\":246,\"g\":185,\"b\":157,\"a\":1}",
+            "{\"r\":203,\"g\":138,\"b\":144,\"a\":1}"};
+
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
+    public void createSampleNotes(
+            String username, Project noteProject) {
+        List<com.bulletjournal.controller.models.Note> notes = new ArrayList<>();
+        Note note = this.create(noteProject.getId(), username, new CreateNoteParams("Diary"));
+        this.setColor(username, note.getId(), "{\"r\":250,\"g\":240,\"b\":228,\"a\":1}");
+        notes.add(note.toPresentationModel());
+        for (int i = 0; i < MONTHS.length; i++) {
+            String month = MONTHS[i];
+            note = this.create(noteProject.getId(), username, new CreateNoteParams(month));
+            this.setColor(username, note.getId(), MONTH_COLORS[i]);
+            notes.get(0).addSubNote(note.toPresentationModel());
+            for (int j = 1; j <= 3; j++) {
+                note = this.create(noteProject.getId(), username, new CreateNoteParams(Integer.toString(i + 1) + "-" + j));
+                notes.get(0).getSubNotes().get(i).addSubNote(note.toPresentationModel());
+            }
+        }
+
+        this.updateUserNotes(noteProject.getId(), notes, username);
     }
 }

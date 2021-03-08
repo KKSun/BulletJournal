@@ -2,6 +2,7 @@ import { actions } from './reducer';
 import { Task, ReminderSetting, TaskStatus } from './interface';
 import { History } from 'history';
 import {ProjectItemUIType} from "../project/constants";
+import { Content } from '../myBuJo/interface';
 
 export const updateTasks = (projectId: number) =>
   actions.TasksUpdate({ projectId: projectId });
@@ -16,6 +17,7 @@ export const createTask = (
   duration: number,
   reminderSetting: ReminderSetting,
   recurrenceRule: string,
+  location: string,
   timezone: string,
   labels: number[]
 ) =>
@@ -28,6 +30,7 @@ export const createTask = (
     duration: duration,
     reminderSetting: reminderSetting,
     recurrenceRule: recurrenceRule,
+    location: location,
     timezone: timezone,
     labels: labels,
   });
@@ -66,6 +69,7 @@ export const patchTask = (
   dueTime?: string,
   duration?: number,
   reminderSetting?: ReminderSetting,
+  location?: string,
   recurrenceRule?: string,
   labels?: number[]
 ) =>
@@ -79,6 +83,7 @@ export const patchTask = (
     dueTime: dueTime,
     duration: duration,
     reminderSetting: reminderSetting,
+    location: location,
     recurrenceRule: recurrenceRule,
     labels: labels,
   });
@@ -210,14 +215,6 @@ export const setTaskStatus = (taskId: number, taskStatus: TaskStatus, type: Proj
     type: type
   });
 
-export const patchTaskRevisionContents = (
-    taskId: number,
-    contentId: number,
-    revisionContents: string[],
-    etag: string
-) => actions.TaskPatchRevisionContents({
-    taskId: taskId, contentId: contentId, revisionContents: revisionContents, etag: etag});
-
 export const taskReceived = (task: Task | undefined) => actions.taskReceived({task: task});
 
 export const getTaskStatistics = (
@@ -232,4 +229,18 @@ export const getTaskStatistics = (
     endDate: endDate
 });
 
+export const shareTaskByEmail = (
+  taskId: number,
+  contents: Content[],
+  emails: string[],
+  targetUser?: string,
+  targetGroup?: number,
+) =>
+  actions.TaskShareByEmail({
+    taskId: taskId,
+    contents: contents,
+    emails: emails,
+    targetUser: targetUser,
+    targetGroup: targetGroup,
+  });
 

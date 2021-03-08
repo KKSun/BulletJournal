@@ -3,7 +3,7 @@ import {
   Transaction,
   LedgerSummary,
   FrequencyType,
-  LedgerSummaryType,
+  LedgerSummaryType, BankAccount,
 } from './interface';
 import { History } from 'history';
 import { Content } from '../myBuJo/interface';
@@ -56,6 +56,10 @@ export type UpdateTransactions = {
   labelsToRemove?: number[];
 };
 
+export type UpdateRecurringTransactions = {
+  projectId: number;
+};
+
 export type updateVisibleAction = {
   visible: boolean;
 };
@@ -66,10 +70,14 @@ export type CreateTransaction = {
   name: string;
   payer: string;
   transactionType: number;
-  date: string;
+  date?: string;
   timezone: string;
+  location: string;
   labels: number[];
   time?: string;
+  recurrenceRule?: string;
+  bankAccountId?: number;
+  onSuccess?: Function;
 };
 
 export type GetTransaction = {
@@ -86,12 +94,14 @@ export type TransactionAction = {
 
 export type DeleteTransaction = {
   transactionId: number;
-  type: ProjectItemUIType;
+  type?: ProjectItemUIType;
+  dateTime?: string;
+  onSuccess?: Function;
 };
 
 export type DeleteTransactions = {
   projectId: number;
-  transactionsId: number[];
+  transactions: Transaction[];
   type: ProjectItemUIType;
 };
 
@@ -108,7 +118,10 @@ export type PatchTransaction = {
   date?: string;
   time?: string;
   timezone?: string;
+  location?: string;
   labels?: number[];
+  recurrenceRule?: string;
+  bankAccountId?: number;
 };
 
 export type MoveTransaction = {
@@ -151,25 +164,64 @@ export type TransactionsByPayerAction = {
   transactionsByPayer: Array<Transaction>;
 };
 
-export type PatchRevisionContents = {
+export type RecurringTransactionsAction = {
+  transactions: Transaction[];
+};
+
+export type BankAccountTransactionsAction = {
+  transactions: Transaction[];
+};
+
+export type UpdateTransactionColorSettingShownAction = {
+  TransactionColorSettingShown: boolean;
+};
+
+export type UpdateTransactionColorAction = {
   transactionId: number;
-  contentId: number;
-  revisionContents: string[];
-  etag: string;
+  color: string | undefined;
+};
+
+export type UpdateTransactionBankAccountAction = {
+  transactionId: number;
+  bankAccount: number | undefined;
+};
+
+export type ShareTransactionByEmailAction = {
+  transactionId: number,
+  contents: Content[],
+  emails: string[],
+  targetUser?: string,
+  targetGroup?: number,
+};
+
+export type ChangeBankAccountBalanceAction = {
+  bankAccount: BankAccount,
+  balance: number,
+  description: string,
+  onSuccess: Function
+};
+
+export type GetBankAccountTransactionsAction = {
+  bankAccountId: number,
+  startDate: string,
+  endDate: string
 }
 
 let initialState = {
   contents: [] as Array<Content>,
   transaction: undefined as Transaction | undefined,
   ledgerSummary: {} as LedgerSummary,
-  addTransactionVisible: false,
+  addTransactionVisible: true,
   //used for form
   startDate: '',
   endDate: '',
   frequencyType: FrequencyType.MONTHLY,
   ledgerSummaryType: LedgerSummaryType.DEFAULT,
   timezone: '',
+  recurringTransactions: [] as Array<Transaction>,
   transactionsByPayer: [] as Array<Transaction>,
+  bankAccountTransactions: [] as Array<Transaction>,
+  transactionColorSettingShown: false,
 };
 
 const slice = createSlice({
@@ -182,6 +234,20 @@ const slice = createSlice({
     ) => {
       const { transactionsByPayer } = action.payload;
       state.transactionsByPayer = transactionsByPayer;
+    },
+    recurringTransactionsReceived: (
+        state,
+        action: PayloadAction<RecurringTransactionsAction>
+    ) => {
+      const { transactions } = action.payload;
+      state.recurringTransactions = transactions;
+    },
+    bankAccountTransactionsReceived: (
+        state,
+        action: PayloadAction<BankAccountTransactionsAction>
+    ) => {
+      const { transactions } = action.payload;
+      state.bankAccountTransactions = transactions;
     },
     getTransactionsByPayer: (
       state,
@@ -211,6 +277,8 @@ const slice = createSlice({
     ) => state,
     TransactionsUpdate: (state, action: PayloadAction<UpdateTransactions>) =>
       state,
+    RecurringTransactionsUpdate: (state, action: PayloadAction<UpdateRecurringTransactions>) =>
+        state,
     TransactionsCreate: (state, action: PayloadAction<CreateTransaction>) =>
       state,
     TransactionGet: (state, action: PayloadAction<GetTransaction>) => state,
@@ -270,7 +338,24 @@ const slice = createSlice({
         state.timezone = timezone;
       }
     },
-    TransactionPatchRevisionContents: (state, action: PayloadAction<PatchRevisionContents>) => state,
+    updateTransactionColorSettingShown: (
+      state,
+      action: PayloadAction<UpdateTransactionColorSettingShownAction>
+    ) => {
+      const { TransactionColorSettingShown } = action.payload;
+      state.transactionColorSettingShown = TransactionColorSettingShown;
+    },
+    updateTransactionColor: (
+      state,
+      action: PayloadAction<UpdateTransactionColorAction>
+    ) => state,
+    updateTransactionBankAccount: (
+        state,
+        action: PayloadAction<UpdateTransactionBankAccountAction>
+    ) => state,
+    TransactionShareByEmail: (state, action: PayloadAction<ShareTransactionByEmailAction>) => state,
+    ChangeBankAccountBalance: (state, action: PayloadAction<ChangeBankAccountBalanceAction>) => state,
+    GetBankAccountTransactions: (state, action: PayloadAction<GetBankAccountTransactionsAction>) => state,
   },
 });
 

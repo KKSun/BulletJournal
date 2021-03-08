@@ -1,13 +1,13 @@
 import React from 'react';
 import {RouteComponentProps} from 'react-router';
-import {Project} from '../../features/project/interface';
+import {Project, ProjectSetting} from '../../features/project/interface';
 import {IState} from '../../store';
 import {connect} from 'react-redux';
 import {GroupsWithOwner, User} from '../../features/group/interface';
 import {Avatar, BackTop, Badge, message, Popconfirm, Popover, Radio, Tag, Tooltip} from 'antd';
-import {deleteProject, getProject} from '../../features/project/actions';
+import {deleteProject, getProject, updateSettingShown} from '../../features/project/actions';
 import {iconMapper} from '../../components/side-menu/side-menu.component';
-import {DeleteOutlined, DownOutlined, TeamOutlined, UpOutlined,} from '@ant-design/icons';
+import {DeleteOutlined, DownOutlined, TeamOutlined, UpOutlined, SettingOutlined,} from '@ant-design/icons';
 import EditProject from '../../components/modals/edit-project.component';
 import AddTransaction from '../../components/modals/add-transaction.component';
 import {ProjectType} from '../../features/project/constants';
@@ -30,7 +30,7 @@ import TransactionsByPayer from '../../components/modals/transactions-by-payer.c
 import ShowProjectHistory from '../../components/modals/show-project-history.component';
 import {FrequencyType, LedgerSummaryType,} from '../../features/transactions/interface';
 import {projectLabelsUpdate, setSelectedLabel,} from '../../features/label/actions';
-import {Label, stringToRGB} from '../../features/label/interface';
+import {Label} from '../../features/label/interface';
 import {getIcon} from '../../components/draggable-labels/draggable-label-list.component';
 import {animation, IconFont, Item, Menu, MenuProvider} from "react-contexify";
 import {theme as ContextMenuTheme} from "react-contexify/lib/utils/styles";
@@ -38,6 +38,7 @@ import CopyToClipboard from "react-copy-to-clipboard";
 import {CheckSquareTwoTone, CloseCircleTwoTone, CopyOutlined, MenuOutlined, StopTwoTone} from "@ant-design/icons/lib";
 import {RadioChangeEvent} from "antd/lib/radio";
 import {getCookie} from "../../index";
+import {stringToRGB} from "../../utils/Util";
 
 type ProjectPathParams = {
   projectId: string;
@@ -71,6 +72,7 @@ type ProjectPageProps = {
   timezone: string;
   history: History<History.PoorMansUnknown>;
   project: Project | undefined;
+  projectSetting: ProjectSetting;
   transactionTimezone: string;
   transactionFrequencyType: FrequencyType;
   transactionStartDate: string;
@@ -109,6 +111,7 @@ type ProjectPageProps = {
   updateExpandedMyself: (updateSettings: boolean) => void;
   projectLabelsUpdate: (projectId: number, projectShared: boolean) => void;
   setSelectedLabel: (label: Label) => void;
+  updateSettingShown: (visible: boolean) => void;
 };
 
 type MyselfProps = {
@@ -240,6 +243,14 @@ class ProjectPage extends React.Component<ProjectPageProps & ProjectPathProps & 
         undefined
     );
   };
+
+  getBgColor = () => {
+    const {projectSetting} = this.props;
+    if (!projectSetting) return undefined;
+    const bgColorSetting = projectSetting.color ? JSON.parse(projectSetting.color) : undefined;
+    const bgColor = bgColorSetting ? `rgba(${ bgColorSetting.r }, ${ bgColorSetting.g }, ${ bgColorSetting.b }, ${ bgColorSetting.a })` : undefined;
+    return bgColor;
+  }
 
   handleGetProjectItemsByUserCall: { [key in ProjectType]: Function } = {
     [ProjectType.NOTE]: this.handleGetNotesByOwner,
@@ -584,7 +595,7 @@ class ProjectPage extends React.Component<ProjectPageProps & ProjectPathProps & 
 
     if (project.description) {
       projectHeader = <Popover
-          placement="bottom"
+          placement="leftTop"
           content={<div className="project-description">
             {project.description.split('\n').map((s, key) => {
               return <p key={key}>{s}</p>;
@@ -594,12 +605,13 @@ class ProjectPage extends React.Component<ProjectPageProps & ProjectPathProps & 
         {projectHeader}
       </Popover>
     }
-
+    
     return (
         <div
             className={`project ${
                 project.projectType === ProjectType.LEDGER && 'ledger'
             }`}
+            style={{background: this.getBgColor()}}
         >
           <Tooltip
               placement="top"
@@ -626,7 +638,7 @@ class ProjectPage extends React.Component<ProjectPageProps & ProjectPathProps & 
           &nbsp;{project.name}
         </span>
       </MenuProvider>
-      <Menu id={`pr${project.id}`}
+      <Menu id={`pr${project.id}`} style={{background: this.getBgColor()}}
             theme={this.props.theme === 'DARK' ? ContextMenuTheme.dark : ContextMenuTheme.light}
             animation={animation.zoom}>
         <CopyToClipboard
@@ -639,6 +651,10 @@ class ProjectPage extends React.Component<ProjectPageProps & ProjectPathProps & 
             <span>Copy Link Address</span>
           </Item>
         </CopyToClipboard>
+        {this.props.myself === project.owner.name && <Item onClick={() => this.props.updateSettingShown(true)}>
+            <IconFont style={{fontSize: '14px', paddingRight: '6px'}}><SettingOutlined/></IconFont>
+            <span>Change Settings</span>
+        </Item>}
       </Menu>
     </>
   }
@@ -646,6 +662,7 @@ class ProjectPage extends React.Component<ProjectPageProps & ProjectPathProps & 
 
 const mapStateToProps = (state: IState) => ({
   project: state.project.project,
+  projectSetting: state.project.setting,
   groups: state.group.groups,
   myself: state.myself.username,
   theme: state.myself.theme,
@@ -669,4 +686,5 @@ export default connect(mapStateToProps, {
   updateExpandedMyself,
   projectLabelsUpdate,
   setSelectedLabel,
+  updateSettingShown,
 })(ProjectPage);

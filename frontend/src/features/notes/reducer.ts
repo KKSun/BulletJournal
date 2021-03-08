@@ -32,6 +32,7 @@ export type updateVisibleAction = {
 export type CreateNote = {
   projectId: number;
   name: string;
+  location: string;
   labels?: number[];
 };
 
@@ -70,6 +71,7 @@ export type DeleteContent = {
 export type PatchNote = {
   noteId: number;
   name: string;
+  location: string;
   labels?: number[];
 };
 
@@ -147,18 +149,29 @@ export type NotesByOrderAction = {
   notesByOrder: Array<Note>;
 };
 
-export type PatchRevisionContents = {
+export type UpdateColorSettingShownAction = {
+  colorSettingShown: boolean;
+};
+
+export type UpdateNoteColorAction = {
   noteId: number;
-  contentId: number;
-  revisionContents: string[];
-  etag: string;
-}
+  color: string | undefined;
+};
+
+export type ShareNoteByEmailAction = {
+  noteId: number,
+  contents: Content[],
+  emails: string[],
+  targetUser?: string,
+  targetGroup?: number,
+};
 
 let initialState = {
   note: undefined as Note | undefined,
+  colorSettingShown: false,
   contents: [] as Array<Content>,
   notes: [] as Array<Note>,
-  addNoteVisible: false,
+  addNoteVisible: true,
   patchLoading: true,
   sharedUsers: [] as User[],
   sharedLinks: [] as SharableLink[],
@@ -245,7 +258,18 @@ const slice = createSlice({
     NoteSharablesGet: (state, action: PayloadAction<GetSharables>) => state,
     NoteRevokeSharable: (state, action: PayloadAction<RevokeSharable>) => state,
     NoteRemoveShared: (state, action: PayloadAction<RemoveShared>) => state,
-    NotePatchRevisionContents: (state, action: PayloadAction<PatchRevisionContents>) => state,
+    updateColorSettingShown: (
+      state,
+      action: PayloadAction<UpdateColorSettingShownAction>
+    ) => {
+      const { colorSettingShown } = action.payload;
+      state.colorSettingShown = colorSettingShown;
+    },
+    updateNoteColor: (
+      state,
+      action: PayloadAction<UpdateNoteColorAction>
+    ) => state,
+    NoteShareByEmail: (state, action: PayloadAction<ShareNoteByEmailAction>) => state,
   },
 });
 

@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,12 +14,10 @@ import java.util.Map;
 public class DeltaContent {
 
     public static final String DELTA = "delta";
-    public static final String MDELTA = "mdelta";
     public static final String HTML_TAG = "###html###";
-    public static final String EMPTY_CONTENT = "{\"delta\":{\"ops\":[{\"insert\":\" \\n\"}]}," +
-            "\"###html###\":\"<p> </p>\"}";
+    public static final String EMPTY_CONTENT = "{\"delta\":{\"ops\":[{\"insert\":\" \\n\"}]}}";
     private static final Gson GSON = new GsonBuilder().
-            registerTypeAdapter(Double.class,  new JsonSerializer<Double>() {
+            registerTypeAdapter(Double.class, new JsonSerializer<Double>() {
                 @Override
                 public JsonElement serialize(Double src, Type typeOfSrc, JsonSerializationContext context) {
                     if (src == src.longValue())
@@ -31,27 +30,38 @@ public class DeltaContent {
     @SerializedName(DELTA)
     private Map deltaMap;
 
-    @SerializedName(MDELTA)
-    private List mdeltaList;
-
     @SerializedName(value = HTML_TAG)
     private String html;
 
-    private List<Object> mdiff;
     private List<Object> diff;
 
     public DeltaContent(String text) {
-        // LOGGER.info("DeltaContent {}", text);
         LinkedHashMap<String, Object> map = GSON.fromJson(text, LinkedHashMap.class);
-        deltaMap = (Map) map.get(DELTA);
-        mdeltaList = (List) map.get(MDELTA);
-        diff = (List) map.get("diff");
-        mdiff = (List) map.get("mdiff");
-        this.html = map.get(HTML_TAG) == null ? null : map.get(HTML_TAG).toString();
+        this.deltaMap = adjustDelta((Map) map.get(DELTA));
+        this.diff = (List) map.get("diff");
+        // this.html = map.get(HTML_TAG) == null ? null : map.get(HTML_TAG).toString();
     }
 
-    public boolean hasDeltaMap() {
-        return this.deltaMap != null;
+    private Map adjustDelta(final Map<String, Object> deltaMap) {
+        if (deltaMap == null) {
+            return null;
+        }
+        List<Map<String, Object>> deltaList = new ArrayList<>();
+        List<LinkedHashMap> opsList = (ArrayList) (deltaMap.get("ops"));
+        for (Map<String, Object> innerDeltaMap : opsList) {
+            if (innerDeltaMap.containsKey("insert") && (innerDeltaMap.get("insert")) instanceof Map) {
+                Map insertMap = (Map) innerDeltaMap.get("insert");
+                if (insertMap.containsKey("emoji")) {
+                    deltaList.add(DeltaConverter.WebToMobile.webToMobileEmoji(insertMap));
+                    continue;
+                }
+            }
+            deltaList.add(innerDeltaMap);
+        }
+
+        LinkedHashMap opsMap = new LinkedHashMap();
+        opsMap.put("ops", deltaList);
+        return opsMap;
     }
 
     public String getHtml() {
@@ -62,41 +72,27 @@ public class DeltaContent {
         this.html = html;
     }
 
-    public boolean hasMdeltaList() {
-        return this.mdeltaList != null;
+    public boolean hasDeltaMap() {
+        return this.deltaMap != null;
     }
 
     public Map getDeltaMap() {
-        return deltaMap;
+        return this.deltaMap;
+    }
+
+    public String getDeltaOpsString() {
+        List<LinkedHashMap> opsList = (ArrayList) (getDeltaMap().get("ops"));
+        return GSON.toJson(opsList);
     }
 
     public void setDeltaMap(Map deltaMap) {
         this.deltaMap = deltaMap;
     }
 
-    public List getMdeltaList() {
-        return mdeltaList;
-    }
-
-    public void setMdeltaList(List mdeltaList) {
-        this.mdeltaList = mdeltaList;
-    }
-
-    public List<Object> getMdiff() {
-        return mdiff;
-    }
-
-    public List<Object> getMdiffOrDefault(List<Object> defaultValue) {
-        return mdiff != null ? mdiff : defaultValue;
-    }
-
-    public void setMdiff(List<Object> mdiff) {
-        this.mdiff = mdiff;
-    }
-
     public List<Object> getDiff() {
         return diff;
     }
+
     public List<Object> getDiffOrDefault(List<Object> defaultValue) {
         return diff != null ? diff : defaultValue;
     }

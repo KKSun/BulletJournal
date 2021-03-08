@@ -28,6 +28,8 @@
     <link rel="stylesheet" href="assets/css/main.css"/>
     <!-- Responsive Style -->
     <link rel="stylesheet" href="assets/css/responsive.css"/>
+    <script data-ad-client="ca-pub-8783793954376932" async
+            src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
 </head>
 <body>
 <!-- Header Area wrapper Starts -->
@@ -38,7 +40,7 @@
     >
         <div class="container">
             <!-- Brand and toggle get grouped for better mobile display -->
-            <a href="https://bulletjournal.us" class="navbar-brand"
+            <a href="https://bulletjournal.us?ssoLogin=true" class="navbar-brand"
             ><img src="assets/img/favicon.ico" width="50" alt=""
             /></a>
             <button
@@ -99,7 +101,7 @@
                             keep track of everything in your busy life
                         </h2>
                         <div class="header-button wow fadeInUp" data-wow-delay="0.3s">
-                            <a href="https://bulletjournal.us" class="btn btn-common"
+                            <a href="https://bulletjournal.us?ssoLogin=true" class="btn btn-common"
                             >Explore</a
                             >
                         </div>
@@ -108,7 +110,7 @@
                             class="img-thumb text-center wow fadeInUp"
                             data-wow-delay="0.6s"
                     >
-                        <a href="https://bulletjournal.us">
+                        <a href="https://bulletjournal.us?ssoLogin=true">
                             <img class="img-fluid" src="assets/img/hero-1.png" alt=""/>
                         </a>
                     </div>
@@ -128,7 +130,7 @@
                 <div class="text-wrapper">
                     <div style="text-align: center">
                         <div>
-                            <a id="templates_pic"
+                            <a id="templates_pic" target="_blank"
                                href="https://bulletjournal.us/public/templates">
                                 <img class="img-fluid"
                                      src="https://user-images.githubusercontent.com/122956/93190453-3df4d800-f6f8-11ea-8a66-4074db4adc70.png"
@@ -152,6 +154,25 @@
                     <div
                             class="feature-item wow fadeInDown"
                             data-wow-duration="1000ms"
+                            data-wow-delay="500ms"
+                    >
+                        <div style="cursor:pointer" onclick="goToCollabPage()">
+                            <div class="icon">
+                                <i class="lni-users"></i>
+                            </div>
+                            <div class="feature-content">
+                                <h3>Collaborate Freely</h3>
+                                <p>
+                                    Share your tasks and notes with teammates, and see changes as they happen in
+                                    real-time,
+                                    across all devices
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div
+                            class="feature-item wow fadeInDown"
+                            data-wow-duration="1000ms"
                             data-wow-delay="300ms"
                     >
                         <div class="icon">
@@ -162,22 +183,6 @@
                             <p>
                                 Track personal and group journals (ToDo, Note, Ledger) from
                                 multiple views with timely reminders
-                            </p>
-                        </div>
-                    </div>
-                    <div
-                            class="feature-item wow fadeInDown"
-                            data-wow-duration="1000ms"
-                            data-wow-delay="500ms"
-                    >
-                        <div class="icon">
-                            <i class="lni-users"></i>
-                        </div>
-                        <div class="feature-content">
-                            <h3>Collaborate Freely</h3>
-                            <p>
-                                Share your tasks and notes with teammates, and see changes as they happen in real-time,
-                                across all devices
                             </p>
                         </div>
                     </div>
@@ -482,6 +487,20 @@
 </section>
 <!-- End Video Promo Section -->
 
+<!-- Ads Section Start -->
+<div class="ads-div">
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-8783793954376932"
+         data-ad-slot="1070434431"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+    <script>
+        (adsbygoogle = window.adsbygoogle || []).push({});
+    </script>
+</div>
+<!-- End Ads Section -->
+
 <!-- Copyright Section Start -->
 <div class="copyright">
     <div class="container">
@@ -614,6 +633,15 @@
             );
             break;
         default:
+    }
+
+    function goToCollabPage() {
+        const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        let result = '';
+        for (let i = 8; i > 0; --i) {
+            result += chars[Math.floor(Math.random() * chars.length)];
+        }
+        window.open('https://bulletjournal.us/collab/?uid=' + result);
     }
 </script>
 </body>

@@ -4,6 +4,7 @@ import com.bulletjournal.config.DaemonClientConfig;
 import com.bulletjournal.notifications.NotificationService;
 import com.bulletjournal.notifications.SampleTaskChange;
 import com.bulletjournal.protobuf.daemon.grpc.services.DaemonGrpc;
+import com.bulletjournal.protobuf.daemon.grpc.types.ConvertJsonObjectsToHtmlRequest;
 import com.bulletjournal.protobuf.daemon.grpc.types.NotificationStreamMsg;
 import com.bulletjournal.protobuf.daemon.grpc.types.SubscribeNotificationMsg;
 import com.bulletjournal.protobuf.daemon.grpc.types.SubscribeSampleTaskMsg;
@@ -64,17 +65,27 @@ public class DaemonServiceClient {
         }
     }
 
-    private SubscribeNotificationMsg getSubscribeNotificationMsg() {
-        return SubscribeNotificationMsg.newBuilder()
-            .setServiceName(SERVICE_NAME)
-            .setClientId(this.clientId).build();
+    public String convertDeltaToHtml(String deltaString) {
+        if (!this.daemonClientConfig.isEnabled()) {
+            LOGGER.info("daemonClientConfig not Enabled, convertDeltaToHtml returns null");
+            return null;
+        }
+        try {
+            return this.daemonBlockingStub.convertDeltaToHtml(
+                    ConvertJsonObjectsToHtmlRequest.newBuilder()
+                            .setDeltaString(deltaString).build())
+                    .getHtmlOutput();
+        } catch (Exception ex) {
+            LOGGER.error("Error converting " + deltaString, ex);
+            return null;
+        }
     }
 
     private void subscribeNotification() {
         LOGGER.info("Sending subscribeNotification to daemon server");
         this.daemonAsyncStub.subscribeNotification(
-            SubscribeNotificationMsg.newBuilder().setServiceName(SERVICE_NAME).setClientId(this.clientId).build(),
-            newResponseObserver());
+                SubscribeNotificationMsg.newBuilder().setServiceName(SERVICE_NAME).setClientId(this.clientId).build(),
+                newResponseObserver());
     }
 
     private StreamObserver<NotificationStreamMsg> newResponseObserver() {

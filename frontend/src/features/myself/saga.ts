@@ -1,11 +1,11 @@
 import {all, call, put, select, takeLatest} from 'redux-saga/effects';
 import {message} from 'antd';
 import {
-    actions as myselfActions,
+    actions as myselfActions, AddBankAccountAction,
     ClearMyself,
     DeleteSampleTaskAction,
     DeleteSampleTasksAction,
-    FetchUserPointActivities,
+    FetchUserPointActivities, GetBankAccountsAction,
     GetSubscribedCategories,
     MySampleTasksAction,
     MyselfApiErrorAction,
@@ -14,7 +14,9 @@ import {
     UnsubscribedCategory,
     UpdateCategorySubscription,
     UpdateExpandedMyself,
-    UpdateMyself
+    UpdateMyself,
+    DeleteBankAccountAction,
+    UpdateBankAccountAction
 } from './reducer';
 import {IState} from '../../store';
 import {actions as settingsActions} from '../../components/settings/reducer';
@@ -34,6 +36,8 @@ import {
 import {SubscribedCategory} from "./interface";
 import {removeUserCategory, updateSubscription} from "../../apis/templates/categoryApis";
 import {SampleTask} from "../templates/interface";
+import {createBankAccount, fetchBankAccounts, deleteBankAccount, updateBankAccount} from "../../apis/bankAccountApis";
+import {BankAccount} from "../transactions/interface";
 
 function* myselfApiErrorAction(action: PayloadAction<MyselfApiErrorAction>) {
     yield call(message.error, `Myself Error Received: ${action.payload.error}`);
@@ -60,7 +64,8 @@ function* getExpandedMyself(action: PayloadAction<UpdateExpandedMyself>) {
                 theme: data.theme,
                 points: data.points,
                 firstTime: data.firstTime,
-                sendUserInvitation: data.sendUserInvitation
+                sendUserInvitation: data.sendUserInvitation,
+                bankAccounts: data.bankAccounts
             })
         );
         const state: IState = yield select();
@@ -108,7 +113,10 @@ function* updateTheme(action: PayloadAction<ThemeUpdate>) {
                 before: data.reminderBeforeTask,
                 currency: data.currency,
                 theme: data.theme,
+                points: data.points,
                 firstTime: data.firstTime,
+                sendUserInvitation: data.sendUserInvitation,
+                bankAccounts: data.bankAccounts
             })
         );
         yield put(expandedMyselfLoading(false));
@@ -304,6 +312,85 @@ function* deleteMySampleTasks(action: PayloadAction<DeleteSampleTasksAction>) {
     yield put(myselfActions.removingSampleTasksReceived({deleting: false}));
 }
 
+function* getBankAccounts(action: PayloadAction<GetBankAccountsAction>) {
+    try {
+        const data = yield call(fetchBankAccounts);
+        const bankAccounts : BankAccount[] = yield data.json();
+        yield put(
+            myselfActions.myselfDataReceived({
+                bankAccounts: bankAccounts
+            })
+        );
+    } catch (error) {
+        if (error.message === 'reload') {
+            yield put(reloadReceived(true));
+        } else {
+            yield call(message.error, `getBankAccounts Error Received: ${error}`);
+        }
+    }
+}
+
+function* addBankAccount(action: PayloadAction<AddBankAccountAction>) {
+    try {
+        const {name, accountType, accountNumber, description, onSuccess} = action.payload;
+        const bankAccount : BankAccount = yield call(createBankAccount, name, accountType, accountNumber, description);
+        const data = yield call(fetchBankAccounts);
+        const bankAccounts : BankAccount[] = yield data.json();
+        yield put(
+            myselfActions.myselfDataReceived({
+                bankAccounts: bankAccounts
+            })
+        );
+        onSuccess(bankAccount.id);
+    } catch (error) {
+        if (error.message === 'reload') {
+            yield put(reloadReceived(true));
+        } else {
+            yield call(message.error, `addBankAccount Error Received: ${error}`);
+        }
+    }
+}
+
+function* removeBankAccount(action: PayloadAction<DeleteBankAccountAction>) {
+    try {
+        const {bankAccountId} = action.payload;
+        const bankAccount : BankAccount = yield call(deleteBankAccount, bankAccountId);
+        const data = yield call(fetchBankAccounts);
+        const bankAccounts : BankAccount[] = yield data.json();
+        yield put(
+            myselfActions.myselfDataReceived({
+                bankAccounts: bankAccounts
+            })
+        );
+    } catch (error) {
+        if (error.message === 'reload') {
+            yield put(reloadReceived(true));
+        } else {
+            yield call(message.error, `addBankAccount Error Received: ${error}`);
+        }
+    }
+}
+
+function* patchBankAccount(action: PayloadAction<UpdateBankAccountAction>) {
+    try {
+        const {id, name, accountType, accountNumber, description} = action.payload;
+        const bankAccount : BankAccount = yield call(updateBankAccount, id, name, accountType, accountNumber, description);
+        const data = yield call(fetchBankAccounts);
+        const bankAccounts : BankAccount[] = yield data.json();
+        yield put(
+            myselfActions.myselfDataReceived({
+                bankAccounts: bankAccounts
+            })
+        );
+    } catch (error) {
+        if (error.message === 'reload') {
+            yield put(reloadReceived(true));
+        } else {
+            yield call(message.error, `addBankAccount Error Received: ${error}`);
+        }
+    }
+}
+
 export default function* myselfSagas() {
     yield all([
         yield takeLatest(
@@ -325,6 +412,10 @@ export default function* myselfSagas() {
         yield takeLatest(myselfActions.getMySampleTasks.type, getMySampleTasks),
         yield takeLatest(myselfActions.deleteMySampleTask.type, deleteMySampleTask),
         yield takeLatest(myselfActions.deleteMySampleTasks.type, deleteMySampleTasks),
+        yield takeLatest(myselfActions.getMyBankAccounts.type, getBankAccounts),
+        yield takeLatest(myselfActions.addMyBankAccount.type, addBankAccount),
+        yield takeLatest(myselfActions.deleteMyBankAccount.type, removeBankAccount),
+        yield takeLatest(myselfActions.updateMyBankAccount.type, patchBankAccount),
     ]);
 }
 

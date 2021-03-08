@@ -4,18 +4,25 @@ import com.bulletjournal.authz.AuthorizationService;
 import com.bulletjournal.clients.UserClient;
 import com.bulletjournal.contents.ContentType;
 import com.bulletjournal.controller.models.*;
+import com.bulletjournal.controller.models.params.CreateContactTopicParams;
 import com.bulletjournal.controller.utils.EtagGenerator;
 import com.bulletjournal.daemon.Reminder;
 import com.bulletjournal.daemon.models.ReminderRecord;
 import com.bulletjournal.exceptions.BadRequestException;
+import com.bulletjournal.exceptions.ResourceNotFoundException;
 import com.bulletjournal.exceptions.UnAuthorizedException;
+import com.bulletjournal.notifications.Event;
+import com.bulletjournal.notifications.NotificationService;
+import com.bulletjournal.notifications.informed.RequestProjectItemWriteAccessEvent;
 import com.bulletjournal.redis.RedisEtagDaoJpa;
 import com.bulletjournal.redis.models.Etag;
 import com.bulletjournal.redis.models.EtagType;
 import com.bulletjournal.repository.*;
 import com.bulletjournal.repository.factory.ProjectItemDaos;
 import com.bulletjournal.repository.models.ProjectItemModel;
+import com.bulletjournal.util.DeltaContent;
 import com.bulletjournal.util.StringUtil;
+import com.google.common.collect.ImmutableList;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
@@ -24,6 +31,8 @@ import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
@@ -43,6 +52,8 @@ public class SystemController {
     public static final String PUBLIC_ITEM_ROUTE = PUBLIC_ITEM_ROUTE_PREFIX + "{itemId}";
     private static final String CONTACTS_ROUTE = "/api/contacts";
     private static final String SHARED_ITEM_SET_LABELS_ROUTE = "/api/sharedItems/{itemId}/setLabels";
+    private static final String COLLAB_ITEM_ROUTE = "/api/public/collab/{itemId}";
+    private static final String COLLAB_ITEM_REQUEST_WRITE_ROUTE = "/api/public/collab/{itemId}/requestWrite";
     private static final Logger LOGGER = LoggerFactory.getLogger(SystemController.class);
 
     @Autowired
@@ -76,6 +87,9 @@ public class SystemController {
     private TaskController taskController;
 
     @Autowired
+    private TransactionController transactionController;
+
+    @Autowired
     private UserClient userClient;
 
     @Autowired
@@ -87,7 +101,11 @@ public class SystemController {
     @Autowired
     private Reminder reminder;
 
+    @Autowired
+    private NotificationService notificationService;
+
     @GetMapping(UPDATES_ROUTE)
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
     public SystemUpdates getUpdates(@RequestParam(name = "targets", required = false) String targets,
                                     @RequestParam(name = "projectId", required = false) Long projectId,
                                     @RequestHeader(IF_NONE_MATCH) Optional<String> remindingTaskRequestEtag) {
@@ -103,11 +121,11 @@ public class SystemController {
         String notificationsEtag = null;
         String groupsEtag = null;
         String remindingTaskEtag = null;
-        List<Task> remindingTasks = null;
+        List<Task> remindingTasks = Collections.emptyList();
         List<Etag> cachingEtags = new ArrayList<>();
 
         if (targetEtags == null || targetEtags.contains("projectsEtag")) {
-            Projects projects = this.projectDaoJpa.getProjects(username);
+            Projects projects = this.projectDaoJpa.getProjects(username, null);
             ownedProjectsEtag = EtagGenerator.generateEtag(EtagGenerator.HashAlgorithm.MD5,
                     EtagGenerator.HashType.TO_HASHCODE,
                     projects.getOwned());
@@ -169,14 +187,17 @@ public class SystemController {
             final ZonedDateTime endTime = ZonedDateTime.now().plusMinutes(2);
             List<ReminderRecord> reminderRecords = this.reminder.getTasksAssignedThatNeedsWebPopupReminder(
                     username, startTime, endTime);
-            remindingTasks = this.labelDaoJpa.getLabelsForProjectItemList(
-                    this.reminder.getRemindingTasks(reminderRecords, startTime)
-                            .stream().map(t -> t.toPresentationModel()).collect(Collectors.toList()));
+            // clone reminderRecords so we don't hold references to keys of concurrentHashMap
+            List<ReminderRecord> reminderRecordsClone = reminderRecords.stream()
+                    .map(reminderRecord -> reminderRecord.clone()).collect(Collectors.toList());
+            List<Task> tasks = this.reminder.getRemindingTasks(reminderRecordsClone, startTime)
+                    .stream().map(t -> t.toPresentationModel()).collect(Collectors.toList());
+            remindingTasks = this.labelDaoJpa.getLabelsForProjectItemList(tasks);
             remindingTaskEtag = EtagGenerator.generateEtag(EtagGenerator.HashAlgorithm.MD5,
                     EtagGenerator.HashType.TO_HASHCODE,
                     remindingTasks);
             if (remindingTaskRequestEtag.isPresent() && remindingTaskEtag.equals(remindingTaskRequestEtag.get())) {
-                remindingTasks = null;
+                remindingTasks = Collections.emptyList();
             }
         }
 
@@ -200,8 +221,7 @@ public class SystemController {
     public ResponseEntity<?> getPublicProjectItem(
             @NotNull @PathVariable String itemId) {
         String originalUser = MDC.get(UserClient.USER_NAME_KEY);
-        String username = AuthorizationService.SUPER_USER;
-        MDC.put(UserClient.USER_NAME_KEY, username);
+        MDC.put(UserClient.USER_NAME_KEY, AuthorizationService.SUPER_USER);
 
         ProjectItemModel item;
         if (!isUUID(itemId)) {
@@ -215,6 +235,22 @@ public class SystemController {
         if (item == null) {
             return null;
         }
+        PublicProjectItem publicProjectItem = getPublicProjectItem(item);
+
+        if (!isUUID(itemId)) {
+            // For shared item, replace projectItem's labels with shared item's labels
+            publicProjectItem.getProjectItem().setLabels(this.labelDaoJpa.getLabels(item.getSharedItemLabels()));
+        }
+
+        com.bulletjournal.repository.models.Project project = projectDaoJpa.getSharedProject(
+                item.getContentType(), originalUser);
+        if (project != null) {
+            publicProjectItem.setProjectId(project.getId());
+        }
+        return ResponseEntity.ok().body(publicProjectItem);
+    }
+
+    private PublicProjectItem getPublicProjectItem(ProjectItemModel item) {
         List<Content> contents;
         ProjectItem projectItem;
         ContentType contentType = item.getContentType();
@@ -227,20 +263,17 @@ public class SystemController {
                 projectItem = this.taskController.getTask(item.getId());
                 contents = this.taskController.getContents(item.getId());
                 break;
+            case TRANSACTION:
+                projectItem = this.transactionController.getTransaction(item.getId());
+                contents = this.transactionController.getContents(item.getId());
             default:
                 throw new IllegalArgumentException();
         }
 
-        if (!isUUID(itemId)) {
-            // For shared item, replace projectItem's labels with shared item's labels
-            projectItem.setLabels(this.labelDaoJpa.getLabels(item.getSharedItemLabels()));
-        }
-
         projectItem.setShared(true);
         contents.forEach(content -> content.setRevisions(new Revision[0])); // clear revisions
-        com.bulletjournal.repository.models.Project project = projectDaoJpa.getSharedProject(contentType, originalUser);
-        return ResponseEntity.ok().body(
-                new PublicProjectItem(contentType, contents, projectItem, project != null ? project.getId() : null));
+        PublicProjectItem publicProjectItem = new PublicProjectItem(contentType, contents, projectItem, null);
+        return publicProjectItem;
     }
 
     private ProjectItemModel getSharedItem(String itemId, String requester) {
@@ -298,5 +331,87 @@ public class SystemController {
         HttpHeaders responseHeaders = new HttpHeaders();
         responseHeaders.setLocation(new URI(topicUrl));
         return ResponseEntity.ok().headers(responseHeaders).build();
+    }
+
+    @PostMapping(COLLAB_ITEM_REQUEST_WRITE_ROUTE)
+    public String requestCollabItemWriteAccess(@NotNull @PathVariable String itemId) {
+        if (itemId.length() < StringUtil.UUID_LENGTH) {
+            throw new IllegalArgumentException("Invalid UUID " + itemId);
+        }
+        String uuid = itemId.substring(0, StringUtil.UUID_LENGTH);
+        String username = MDC.get(UserClient.USER_NAME_KEY);
+        try {
+            User user = this.userClient.getUser(username);
+            username = user.getName();
+        } catch (ResourceNotFoundException ex) {
+            return "User " + username + " not found";
+        }
+
+        ProjectItemModel item = this.publicProjectItemDaoJpa.getPublicItem(uuid);
+        Event event = new Event(item.getOwner(), item.getId(), item.getName());
+        RequestProjectItemWriteAccessEvent requestProjectItemWriteAccessEvent = new RequestProjectItemWriteAccessEvent(
+                event, username, item.getContentType());
+        this.notificationService.inform(requestProjectItemWriteAccessEvent);
+        return "Owner " + item.getOwner() + " notified";
+    }
+
+    @GetMapping(COLLAB_ITEM_ROUTE)
+    public ResponseEntity<?> getCollabItem(@NotNull @PathVariable String itemId) {
+        if (itemId.length() < StringUtil.UUID_LENGTH) {
+            throw new IllegalArgumentException("Invalid itemId " + itemId);
+        }
+        // itemId is uuid + content id
+        String uuid = itemId.substring(0, StringUtil.UUID_LENGTH);
+        if (!isUUID(uuid)) {
+            throw new IllegalArgumentException("Invalid uuid " + uuid);
+        }
+        MDC.put(UserClient.USER_NAME_KEY, AuthorizationService.SUPER_USER);
+
+        ProjectItemModel item = null;
+        try {
+            item = this.publicProjectItemDaoJpa.getPublicItem(uuid);
+        } catch (ResourceNotFoundException ex) {
+        }
+
+        PublicProjectItem publicProjectItem;
+        if (item == null) { // brand new page
+            publicProjectItem = createEmptyPublicProjectItem();
+            return ResponseEntity.ok().body(publicProjectItem);
+        }
+
+        publicProjectItem = getPublicProjectItem(item);
+        Content content;
+        if (itemId.length() == StringUtil.UUID_LENGTH) {
+            if (publicProjectItem.getContents().isEmpty()) {
+                ProjectItemDaoJpa projectItemDaoJpa = this.projectItemDaos.getDaos()
+                        .get(ProjectType.fromContentType(item.getContentType()));
+                projectItemDaoJpa.addContent(
+                        item.getId(), item.getOwner(), projectItemDaoJpa.newContent(DeltaContent.EMPTY_CONTENT));
+                publicProjectItem = getPublicProjectItem(item);
+            }
+            // use first content if there is any
+            content = publicProjectItem.getContents().get(0);
+        } else {
+            long contentId = Long.parseLong(itemId.substring(StringUtil.UUID_LENGTH));
+            content = publicProjectItem.getContents().stream().filter(c -> contentId == c.getId().longValue())
+                    .findFirst()
+                    .orElseThrow(() -> new ResourceNotFoundException("contentId " + contentId + " not found"));
+        }
+
+        publicProjectItem.setContents(content == null ? Collections.emptyList() : ImmutableList.of(content));
+        return ResponseEntity.ok().body(publicProjectItem);
+    }
+
+    private PublicProjectItem createEmptyPublicProjectItem() {
+        PublicProjectItem publicProjectItem;
+        publicProjectItem = new PublicProjectItem();
+        Content content = new Content();
+        content.setBaseText(DeltaContent.EMPTY_CONTENT);
+        content.setText(DeltaContent.EMPTY_CONTENT);
+        content.setCreatedAt(System.currentTimeMillis());
+        content.setUpdatedAt(System.currentTimeMillis());
+        content.setRevisions(new Revision[0]);
+        publicProjectItem.setContents(ImmutableList.of(content));
+        return publicProjectItem;
     }
 }
